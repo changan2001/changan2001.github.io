@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>长安的AI 助手</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 移动端顶栏 -->
+        <header class="mobile-header">
+            <button class="menu-btn" id="menu-btn">☰</button>
+            <span class="current-chat-title" id="mobile-title">新对话</span>
+            <button class="config-btn" id="config-btn">⚙️</button>
+        </header>
+
+        <!-- 会话列表侧边栏 -->
+        <aside class="sidebar sessions-sidebar" id="sessions-sidebar">
+            <div class="sidebar-header">
+                <h2>💬 对话列表</h2>
+                <button class="new-chat-btn" id="new-chat-btn">+ 新建</button>
+            </div>
+            <div class="sessions-list" id="sessions-list"></div>
+            <div class="sidebar-footer">
+                <button class="toggle-config-btn" id="toggle-config-btn">⚙️ 设置</button>
+            </div>
+        </aside>
+
+        <!-- 配置侧边栏 -->
+        <aside class="sidebar config-sidebar" id="config-sidebar">
+            <div class="sidebar-header">
+                <h2>⚙️ 设置</h2>
+                <button class="close-config-btn" id="close-config-btn">✕</button>
+            </div>
+            <div class="sidebar-scroll">
+                <h3>🔧 API 配置</h3>
+                <div class="config-group">
+                    <label>完整 API URL</label>
+                    <input type="text" id="api-url" placeholder="https://api.example.com/v1/chat/completions">
+                </div>
+                <div class="config-group">
+                    <label>API Key</label>
+                    <input type="password" id="api-key" placeholder="sk-...">
+                </div>
+                <div class="config-group">
+                    <label>模型名称</label>
+                    <input type="text" id="api-model" placeholder="gpt-4o">
+                </div>
+
+                <h3>🎛️ 参数调整</h3>
+                <div class="config-group">
+                    <label>Temperature: <span id="temp-value">0.7</span></label>
+                    <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
+                </div>
+                <div class="config-group">
+                    <label>Top P: <span id="topp-value">1.0</span></label>
+                    <input type="range" id="top-p" min="0" max="1" step="0.05" value="1">
+                </div>
+                <div class="config-group">
+                    <label>Frequency Penalty: <span id="freq-value">0.0</span></label>
+                    <input type="range" id="frequency-penalty" min="0" max="2" step="0.1" value="0">
+                </div>
+                <div class="config-group">
+                    <label>Presence Penalty: <span id="pres-value">0.0</span></label>
+                    <input type="range" id="presence-penalty" min="0" max="2" step="0.1" value="0">
+                </div>
+
+                <h3>🎭 系统提示词</h3>
+                <div class="config-group">
+                    <textarea id="system-prompt" rows="4" placeholder="定义 AI 的角色和行为方式..."></textarea>
+                </div>
+
+                <h3>📊 Token 统计</h3>
+                <div class="stats-box">
+                    <div class="stat-item">
+                        <span class="stat-label">当前上下文</span>
+                        <span class="stat-value" id="current-tokens">0</span>
+                        <span class="stat-unit">tokens</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">本次回复</span>
+                        <span class="stat-value" id="last-response-tokens">0</span>
+                        <span class="stat-unit">tokens</span>
+                    </div>
+                </div>
+
+                <h3>📋 指令系统（例）</h3>
+                <div class="info-box">
+                    <ul>
+                        <li><code>/hide 5-30</code> 隐藏楼层</li>
+                        <li><code>/del 5-10</code> 删除楼层</li>
+                        <li><code>/show all</code> 显示隐藏</li>
+                        <li><code>/clear</code> 清空对话</li>
+                        <li><code>/rename 新名称</code> 重命名</li>
+                        <li><code>/export</code> 导出对话</li>
+                        <li><code>/import</code> 导入对话</li>
+                    </ul>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 遮罩层 -->
+        <div class="overlay" id="overlay"></div>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <div class="chat-window" id="chat-window"></div>
+            <footer class="input-area">
+                <textarea id="message-input" placeholder="输入消息或指令..." rows="1"></textarea>
+                <button id="send-button">发送</button>
+            </footer>
+        </main>
+    </div>
+
+    <!-- 自定义确认弹窗 -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal-box">
+            <p id="modal-message">确定要执行此操作吗？</p>
+            <div class="modal-buttons">
+                <button class="modal-btn cancel" id="modal-cancel">取消</button>
+                <button class="modal-btn confirm" id="modal-confirm">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="import-file-input" accept=".json" style="display: none;">
+    <script src="script.js"></script>
+</body>
+</html>
