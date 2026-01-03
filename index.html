@@ -3,10 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>长安的AI 助手</title>
+    <title>长安的 AI 助手</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        if (typeof marked === 'undefined') {
+            document.write('<script src="https://unpkg.com/marked/marked.min.js"><\/script>');
+        }
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <script>
+        if (typeof DOMPurify === 'undefined') {
+            document.write('<script src="https://unpkg.com/dompurify@3.0.6/dist/purify.min.js"><\/script>');
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/css.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/xml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/java.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/typescript.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -14,7 +35,11 @@
         <header class="mobile-header">
             <button class="menu-btn" id="menu-btn">☰</button>
             <span class="current-chat-title" id="mobile-title">新对话</span>
-            <button class="config-btn" id="config-btn">⚙️</button>
+            <div class="header-actions">
+                <button class="header-btn" id="debug-btn" title="调试日志">🔧</button>
+                <button class="header-btn" id="search-btn" title="搜索">🔍</button>
+                <button class="header-btn" id="config-btn">⚙️</button>
+            </div>
         </header>
 
         <!-- 会话列表侧边栏 -->
@@ -22,6 +47,9 @@
             <div class="sidebar-header">
                 <h2>💬 对话列表</h2>
                 <button class="new-chat-btn" id="new-chat-btn">+ 新建</button>
+            </div>
+            <div class="session-search-box">
+                <input type="text" id="session-search" placeholder="🔍 搜索对话标题...">
             </div>
             <div class="sessions-list" id="sessions-list"></div>
             <div class="sidebar-footer">
@@ -36,7 +64,17 @@
                 <button class="close-config-btn" id="close-config-btn">✕</button>
             </div>
             <div class="sidebar-scroll">
-                <h3>🔧 API 配置</h3>
+                <!-- API 配置管理 -->
+                <h3>🔌 API 配置</h3>
+                <div class="preset-manager">
+                    <select id="api-config-select" class="preset-select"></select>
+                    <button class="preset-btn add" id="add-api-config-btn" title="新建配置">+</button>
+                    <button class="preset-btn delete" id="delete-api-config-btn" title="删除配置">🗑️</button>
+                </div>
+                <div class="config-group">
+                    <label>配置名称</label>
+                    <input type="text" id="api-config-name" placeholder="我的API配置">
+                </div>
                 <div class="config-group">
                     <label>完整 API URL</label>
                     <input type="text" id="api-url" placeholder="https://api.example.com/v1/chat/completions">
@@ -47,8 +85,45 @@
                 </div>
                 <div class="config-group">
                     <label>模型名称</label>
-                    <input type="text" id="api-model" placeholder="gpt-4o">
+                    <div class="model-input-group">
+                        <input type="text" id="api-model" placeholder="gpt-4o">
+                        <button class="fetch-models-btn" id="fetch-models-btn" title="查询可用模型">🔍</button>
+                    </div>
                 </div>
+                <div class="config-group" id="model-select-group" style="display: none;">
+                    <label>可用模型列表 <span class="model-count" id="model-count"></span></label>
+                    <select id="model-select" class="model-select">
+                        <option value="">-- 选择模型 --</option>
+                    </select>
+                </div>
+                <div class="config-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="use-stream" checked>
+                        <span>使用流式响应（推荐）</span>
+                    </label>
+                </div>
+                <div class="config-group">
+                    <label>请求超时（秒）</label>
+                    <input type="number" id="request-timeout" value="60" min="10" max="300">
+                </div>
+                <button class="save-preset-btn" id="save-api-config-btn">💾 保存当前配置</button>
+
+                <!-- 预设管理 -->
+                <h3>🎭 系统预设</h3>
+                <div class="preset-manager">
+                    <select id="preset-select" class="preset-select"></select>
+                    <button class="preset-btn add" id="add-preset-btn" title="新建预设">+</button>
+                    <button class="preset-btn delete" id="delete-preset-btn" title="删除预设">🗑️</button>
+                </div>
+                <div class="config-group">
+                    <label>预设名称</label>
+                    <input type="text" id="preset-name" placeholder="默认助手">
+                </div>
+                <div class="config-group">
+                    <label>系统提示词</label>
+                    <textarea id="system-prompt" rows="5" placeholder="定义 AI 的角色和行为方式..."></textarea>
+                </div>
+                <button class="save-preset-btn" id="save-preset-btn">💾 保存当前预设</button>
 
                 <h3>🎛️ 参数调整</h3>
                 <div class="config-group">
@@ -68,11 +143,6 @@
                     <input type="range" id="presence-penalty" min="0" max="2" step="0.1" value="0">
                 </div>
 
-                <h3>🎭 系统提示词</h3>
-                <div class="config-group">
-                    <textarea id="system-prompt" rows="4" placeholder="定义 AI 的角色和行为方式..."></textarea>
-                </div>
-
                 <h3>📊 Token 统计</h3>
                 <div class="stats-box">
                     <div class="stat-item">
@@ -87,20 +157,52 @@
                     </div>
                 </div>
 
-                <h3>📋 指令系统（例）</h3>
+                <h3>📋 快捷指令</h3>
                 <div class="info-box">
                     <ul>
                         <li><code>/hide 5-30</code> 隐藏楼层</li>
                         <li><code>/del 5-10</code> 删除楼层</li>
                         <li><code>/show all</code> 显示隐藏</li>
-                        <li><code>/clear</code> 清空对话</li>
                         <li><code>/rename 新名称</code> 重命名</li>
+                        <li><code>/clear</code> 清空对话</li>
                         <li><code>/export</code> 导出对话</li>
                         <li><code>/import</code> 导入对话</li>
                     </ul>
+                    <p class="info-tip">💡 长按消息可快速操作</p>
                 </div>
             </div>
         </aside>
+
+        <!-- 调试日志面板 -->
+        <div class="debug-panel" id="debug-panel">
+            <div class="debug-header">
+                <h3>🔧 调试日志</h3>
+                <div class="debug-actions">
+                    <button class="debug-action-btn" id="debug-clear-btn">清空</button>
+                    <button class="debug-action-btn" id="debug-copy-btn">复制</button>
+                    <button class="debug-close-btn" id="debug-close-btn">✕</button>
+                </div>
+            </div>
+            <div class="debug-content" id="debug-content"></div>
+        </div>
+
+        <!-- 搜索面板 -->
+        <div class="search-panel" id="search-panel">
+            <div class="search-header">
+                <div class="search-input-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="global-search-input" placeholder="搜索所有对话内容...">
+                    <button class="search-clear-btn" id="search-clear-btn">✕</button>
+                </div>
+                <button class="search-close-btn" id="search-close-btn">取消</button>
+            </div>
+            <div class="search-results" id="search-results">
+                <div class="search-placeholder">
+                    <span class="search-placeholder-icon">💬</span>
+                    <p>输入关键词搜索对话内容</p>
+                </div>
+            </div>
+        </div>
 
         <!-- 遮罩层 -->
         <div class="overlay" id="overlay"></div>
@@ -108,9 +210,29 @@
         <!-- 主内容区 -->
         <main class="main-content">
             <div class="chat-window" id="chat-window"></div>
-            <footer class="input-area">
+
+            <!-- 选择模式操作栏 -->
+            <div class="selection-bar" id="selection-bar">
+                <span class="selection-count" id="selection-count">已选择 0 条</span>
+                <div class="selection-actions">
+                    <button class="sel-btn show-btn" id="sel-show-btn" disabled>显示</button>
+                    <button class="sel-btn hide-btn" id="sel-hide-btn" disabled>隐藏</button>
+                    <button class="sel-btn delete-btn" id="sel-delete-btn" disabled>删除</button>
+                    <button class="sel-btn cancel-btn" id="sel-cancel-btn">取消</button>
+                </div>
+            </div>
+
+            <!-- 图片预览区 -->
+            <div class="image-preview-bar" id="image-preview-bar">
+                <div class="image-preview-list" id="image-preview-list"></div>
+            </div>
+
+            <footer class="input-area" id="input-area">
+                <button class="select-mode-btn" id="select-mode-btn" title="选择消息">☑️</button>
+                <button class="image-btn" id="image-btn" title="添加图片">🖼️</button>
                 <textarea id="message-input" placeholder="输入消息或指令..." rows="1"></textarea>
                 <button id="send-button">发送</button>
+                <button id="stop-button" class="stop-btn hidden">停止</button>
             </footer>
         </main>
     </div>
@@ -126,7 +248,66 @@
         </div>
     </div>
 
+    <!-- 消息快捷菜单 -->
+    <div class="context-menu" id="context-menu">
+        <button class="context-item" data-action="copy">📋 复制内容</button>
+        <button class="context-item" data-action="edit">✏️ 编辑消息</button>
+        <button class="context-item" data-action="regenerate">🔄 重新生成</button>
+        <button class="context-item" data-action="hide">🙈 隐藏消息</button>
+        <button class="context-item" data-action="show">👁️ 显示消息</button>
+        <button class="context-item" data-action="delete">🗑️ 删除消息</button>
+    </div>
+
+    <!-- 重命名弹窗 -->
+    <div class="rename-modal" id="rename-modal">
+        <div class="rename-box">
+            <h3>重命名对话</h3>
+            <input type="text" id="rename-input" placeholder="输入新名称">
+            <div class="rename-buttons">
+                <button class="rename-btn cancel" id="rename-cancel">取消</button>
+                <button class="rename-btn confirm" id="rename-confirm">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑消息弹窗 -->
+    <div class="edit-modal" id="edit-modal">
+        <div class="edit-box">
+            <h3>编辑消息</h3>
+            <textarea id="edit-content" rows="6" placeholder="编辑消息内容..."></textarea>
+            <div class="edit-options">
+                <label class="edit-option">
+                    <input type="checkbox" id="edit-resend" checked>
+                    <span>编辑后重新发送（删除此消息之后的所有内容）</span>
+                </label>
+            </div>
+            <div class="edit-buttons">
+                <button class="edit-btn cancel" id="edit-cancel">取消</button>
+                <button class="edit-btn confirm" id="edit-confirm">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新建预设/API弹窗 -->
+    <div class="create-modal" id="create-modal">
+        <div class="create-box">
+            <h3 id="create-modal-title">新建</h3>
+            <input type="text" id="create-input" placeholder="输入名称">
+            <div class="create-buttons">
+                <button class="create-btn cancel" id="create-cancel">取消</button>
+                <button class="create-btn confirm" id="create-confirm">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图片查看器 -->
+    <div class="image-viewer" id="image-viewer">
+        <button class="image-viewer-close" id="image-viewer-close">✕</button>
+        <img id="image-viewer-img" src="" alt="查看图片">
+    </div>
+
     <input type="file" id="import-file-input" accept=".json" style="display: none;">
+    <input type="file" id="image-file-input" accept="image/*" multiple style="display: none;">
     <script src="script.js"></script>
 </body>
 </html>
