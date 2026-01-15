@@ -30,6 +30,9 @@
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/typescript.min.js"></script>
 </head>
 <body>
+    <!-- 顶部通知容器 -->
+    <div class="notice-container" id="notice-container"></div>
+
     <div class="app-container">
         <!-- 移动端顶栏 -->
         <header class="mobile-header">
@@ -76,8 +79,9 @@
                     <input type="text" id="api-config-name" placeholder="我的API配置">
                 </div>
                 <div class="config-group">
-                    <label>完整 API URL</label>
+                    <label>聊天补全端点 (完整URL)</label>
                     <input type="text" id="api-url" placeholder="https://api.example.com/v1/chat/completions">
+                    <span class="config-hint">直接输入完整的聊天补全API地址</span>
                 </div>
                 <div class="config-group">
                     <label>API Key</label>
@@ -104,7 +108,7 @@
                 </div>
                 <div class="config-group">
                     <label>请求超时（秒）</label>
-                    <input type="number" id="request-timeout" value="60" min="10" max="300">
+                    <input type="number" id="request-timeout" value="120" min="10" max="600">
                 </div>
                 <button class="save-preset-btn" id="save-api-config-btn">💾 保存当前配置</button>
 
@@ -142,6 +146,10 @@
                     <label>Presence Penalty: <span id="pres-value">0.0</span></label>
                     <input type="range" id="presence-penalty" min="0" max="2" step="0.1" value="0">
                 </div>
+                <div class="config-group">
+                    <label>Max Tokens (0=不限制): <span id="max-tokens-value">0</span></label>
+                    <input type="range" id="max-tokens" min="0" max="16384" step="256" value="0">
+                </div>
 
                 <h3>📊 Token 统计</h3>
                 <div class="stats-box">
@@ -162,13 +170,13 @@
                     <ul>
                         <li><code>/hide 5-30</code> 隐藏楼层</li>
                         <li><code>/del 5-10</code> 删除楼层</li>
-                        <li><code>/show all</code> 显示隐藏</li>
+                        <li><code>/show 5-10</code> 显示楼层</li>
                         <li><code>/rename 新名称</code> 重命名</li>
                         <li><code>/clear</code> 清空对话</li>
                         <li><code>/export</code> 导出对话</li>
                         <li><code>/import</code> 导入对话</li>
                     </ul>
-                    <p class="info-tip">💡 长按消息可快速操作</p>
+                    <p class="info-tip">💡 点击消息右上角铅笔图标可快速操作</p>
                 </div>
             </div>
         </aside>
@@ -228,8 +236,10 @@
             </div>
 
             <footer class="input-area" id="input-area">
-                <button class="select-mode-btn" id="select-mode-btn" title="选择消息">☑️</button>
-                <button class="image-btn" id="image-btn" title="添加图片">🖼️</button>
+                <div class="input-side-buttons" id="input-side-buttons">
+                    <button class="side-btn" id="select-mode-btn" title="选择消息">☑️</button>
+                    <button class="side-btn" id="image-btn" title="添加图片">🖼️</button>
+                </div>
                 <textarea id="message-input" placeholder="输入消息或指令..." rows="1"></textarea>
                 <button id="send-button">发送</button>
                 <button id="stop-button" class="stop-btn hidden">停止</button>
@@ -253,7 +263,7 @@
         <button class="context-item" data-action="copy">📋 复制内容</button>
         <button class="context-item" data-action="edit">✏️ 编辑消息</button>
         <button class="context-item" data-action="regenerate">🔄 重新生成</button>
-        <button class="context-item" data-action="hide">🙈 隐藏消息</button>
+        <button class="context-item" data-action="hide">👁️ 隐藏消息</button>
         <button class="context-item" data-action="show">👁️ 显示消息</button>
         <button class="context-item" data-action="delete">🗑️ 删除消息</button>
     </div>
