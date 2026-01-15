@@ -32,6 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
         topP: $('top-p'),
         frequencyPenalty: $('frequency-penalty'),
         presencePenalty: $('presence-penalty'),
+        maxTokens: $('max-tokens'),
+        maxTokensValue: $('max-tokens-value'),
         systemPrompt: $('system-prompt'),
         importFileInput: $('import-file-input'),
         tempValue: $('temp-value'),
@@ -65,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selDeleteBtn: $('sel-delete-btn'),
         selCancelBtn: $('sel-cancel-btn'),
         inputArea: $('input-area'),
+        inputSideButtons: $('input-side-buttons'),
         contextMenu: $('context-menu'),
         renameModal: $('rename-modal'),
         renameInput: $('rename-input'),
@@ -80,26 +83,24 @@ document.addEventListener('DOMContentLoaded', () => {
         createInput: $('create-input'),
         createCancel: $('create-cancel'),
         createConfirm: $('create-confirm'),
-        // 搜索相关
         searchPanel: $('search-panel'),
         globalSearchInput: $('global-search-input'),
         searchClearBtn: $('search-clear-btn'),
         searchCloseBtn: $('search-close-btn'),
         searchResults: $('search-results'),
-        // 调试面板
         debugPanel: $('debug-panel'),
         debugContent: $('debug-content'),
         debugClearBtn: $('debug-clear-btn'),
         debugCopyBtn: $('debug-copy-btn'),
         debugCloseBtn: $('debug-close-btn'),
-        // 图片相关
         imageBtn: $('image-btn'),
         imageFileInput: $('image-file-input'),
         imagePreviewBar: $('image-preview-bar'),
         imagePreviewList: $('image-preview-list'),
         imageViewer: $('image-viewer'),
         imageViewerClose: $('image-viewer-close'),
-        imageViewerImg: $('image-viewer-img')
+        imageViewerImg: $('image-viewer-img'),
+        noticeContainer: $('notice-container')
     };
 
     // ========================================
@@ -109,45 +110,22 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSessionId = null;
     let lastResponseTokens = 0;
     let modalResolve = null;
-
-    // 选择模式状态
     let isSelectMode = false;
     let selectedFloors = new Set();
-
-    // 长按/右键菜单状态
     let contextTargetFloor = null;
     let contextTargetRole = null;
-    let longPressTimer = null;
-
-    // 双击检测
     let lastTitleClickTime = 0;
-
-    // 流式请求控制
     let abortController = null;
     let isGenerating = false;
-
-    // 编辑消息状态
     let editingFloor = null;
-
-    // 预设和API配置
     let presets = [];
     let currentPresetId = null;
     let apiConfigs = [];
     let currentApiConfigId = null;
-
-    // 新建弹窗回调
     let createModalCallback = null;
-
-    // 模型列表缓存
     let cachedModels = [];
-
-    // 待发送的图片
     let pendingImages = [];
-
-    // 搜索防抖
     let searchDebounceTimer = null;
-
-    // 调试日志
     let debugLogs = [];
 
     // ========================================
@@ -162,18 +140,14 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         debugLogs.push(entry);
-
-        // 保持最多500条日志
         if (debugLogs.length > 500) {
             debugLogs.shift();
         }
 
-        // 如果调试面板打开，实时更新
         if (elements.debugPanel.classList.contains('active')) {
             appendDebugEntry(entry);
         }
 
-        // 同时输出到控制台
         const consoleMethod = type === 'error' ? 'error' : type === 'warning' ? 'warn' : 'log';
         console[consoleMethod](`[${type.toUpperCase()}] ${message}`, details || '');
     }
@@ -284,11 +258,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function loadAllData() {
-        // 加载会话
         sessions = JSON.parse(localStorage.getItem('sessions')) || [];
         lastResponseTokens = parseInt(localStorage.getItem('lastResponseTokens')) || 0;
 
-        // 加载预设
         presets = JSON.parse(localStorage.getItem('presets')) || [];
         currentPresetId = localStorage.getItem('currentPresetId');
 
@@ -303,7 +275,6 @@ document.addEventListener('DOMContentLoaded', () => {
             savePresets();
         }
 
-        // 加载API配置
         apiConfigs = JSON.parse(localStorage.getItem('apiConfigs')) || [];
         currentApiConfigId = localStorage.getItem('currentApiConfigId');
 
@@ -315,18 +286,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 key: localStorage.getItem('apiKey') || '',
                 model: localStorage.getItem('apiModel') || 'gpt-4o',
                 useStream: true,
-                timeout: 60
+                timeout: 120
             };
             apiConfigs.push(defaultConfig);
             currentApiConfigId = 'default';
             saveApiConfigs();
         }
 
-        // 加载参数
         elements.temperature.value = localStorage.getItem('temperature') || '0.7';
         elements.topP.value = localStorage.getItem('topP') || '1';
         elements.frequencyPenalty.value = localStorage.getItem('frequencyPenalty') || '0';
         elements.presencePenalty.value = localStorage.getItem('presencePenalty') || '0';
+        elements.maxTokens.value = localStorage.getItem('maxTokens') || '0';
 
         renderApiConfigSelect();
         renderPresetSelect();
@@ -376,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.apiKey.value = config.key;
             elements.apiModel.value = config.model;
             elements.useStream.checked = config.useStream !== false;
-            elements.requestTimeout.value = config.timeout || 60;
+            elements.requestTimeout.value = config.timeout || 120;
         }
         hideModelSelect();
     }
@@ -389,11 +360,11 @@ document.addEventListener('DOMContentLoaded', () => {
             config.key = elements.apiKey.value.trim();
             config.model = elements.apiModel.value.trim();
             config.useStream = elements.useStream.checked;
-            config.timeout = parseInt(elements.requestTimeout.value) || 60;
+            config.timeout = parseInt(elements.requestTimeout.value) || 120;
             saveApiConfigs();
             renderApiConfigSelect();
             showNotice('API配置已保存');
-            log('info', 'API配置已保存', { name: config.name });
+            log('info', 'API配置已保存', { name: config.name, useStream: config.useStream });
         }
     }
 
@@ -414,7 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
             key: '',
             model: 'gpt-4o',
             useStream: true,
-            timeout: 60
+            timeout: 120
         };
         apiConfigs.push(newConfig);
         currentApiConfigId = newConfig.id;
@@ -445,30 +416,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // 模型列表查询
+    // 模型列表查询 (模仿SillyTavern方式)
     // ========================================
     function getModelsEndpoint(chatUrl) {
         try {
             const url = new URL(chatUrl);
-            const pathParts = url.pathname.split('/');
+            // 从chat/completions路径推断models路径
+            let pathname = url.pathname;
 
-            let versionIndex = -1;
-            for (let i = 0; i < pathParts.length; i++) {
-                if (/^v\d+/.test(pathParts[i])) {
-                    versionIndex = i;
-                    break;
+            // 移除末尾的斜杠
+            pathname = pathname.replace(/\/+$/, '');
+
+            // 尝试多种路径模式
+            if (pathname.includes('/chat/completions')) {
+                pathname = pathname.replace('/chat/completions', '/models');
+            } else if (pathname.includes('/completions')) {
+                pathname = pathname.replace('/completions', '/models');
+            } else {
+                // 尝试在版本号后添加/models
+                const versionMatch = pathname.match(/(\/v\d+)/);
+                if (versionMatch) {
+                    pathname = pathname.substring(0, pathname.indexOf(versionMatch[1]) + versionMatch[1].length) + '/models';
+                } else {
+                    // 直接在末尾添加/models
+                    pathname = pathname + '/models';
                 }
             }
 
-            if (versionIndex !== -1) {
-                const basePath = pathParts.slice(0, versionIndex + 1).join('/');
-                url.pathname = basePath + '/models';
-            } else {
-                url.pathname = url.pathname.replace(/\/chat\/completions\/?$/, '/models');
-            }
-
+            url.pathname = pathname;
             return url.toString();
         } catch (e) {
+            log('warning', '解析URL失败，使用简单替换', { error: e.message });
             return chatUrl.replace(/\/chat\/completions\/?$/, '/models');
         }
     }
@@ -495,50 +473,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+            // 模仿SillyTavern的请求头
+            const headers = {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'x-api-key': apiKey  // 某些API使用这个头
+            };
 
             const response = await fetch(modelsUrl, {
                 method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: headers,
                 signal: controller.signal
             });
 
             clearTimeout(timeoutId);
 
+            log('info', '模型列表响应状态', { status: response.status, statusText: response.statusText });
+
             if (!response.ok) {
                 const errorText = await response.text();
+                log('error', '获取模型列表失败', { status: response.status, body: errorText.substring(0, 500) });
                 throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
             }
 
             const data = await response.json();
-            log('info', '模型列表响应', data);
+            log('info', '模型列表原始响应', data);
 
             let models = [];
 
+            // 支持多种响应格式
             if (Array.isArray(data)) {
                 models = data;
             } else if (data.data && Array.isArray(data.data)) {
                 models = data.data;
             } else if (data.models && Array.isArray(data.models)) {
                 models = data.models;
+            } else if (data.object === 'list' && data.data) {
+                models = data.data;
             }
 
             cachedModels = models.map(m => {
                 if (typeof m === 'string') return m;
-                return m.id || m.name || m.model || String(m);
+                return m.id || m.name || m.model || (typeof m === 'object' ? JSON.stringify(m) : String(m));
             }).filter(Boolean);
 
+            // 排序：常用模型优先
             cachedModels.sort((a, b) => {
-                const priority = ['gpt-4', 'gpt-3.5', 'claude', 'gemini'];
-                const aScore = priority.findIndex(p => a.toLowerCase().includes(p));
-                const bScore = priority.findIndex(p => b.toLowerCase().includes(p));
+                const priority = ['gpt-4', 'gpt-3.5', 'claude', 'gemini', 'llama', 'mistral'];
+                const aLower = a.toLowerCase();
+                const bLower = b.toLowerCase();
 
-                if (aScore !== -1 && bScore === -1) return -1;
-                if (aScore === -1 && bScore !== -1) return 1;
-                if (aScore !== bScore) return aScore - bScore;
+                for (const p of priority) {
+                    const aHas = aLower.includes(p);
+                    const bHas = bLower.includes(p);
+                    if (aHas && !bHas) return -1;
+                    if (!aHas && bHas) return 1;
+                }
                 return a.localeCompare(b);
             });
 
@@ -549,7 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 showModelSelect(cachedModels);
                 showNotice(`找到 ${cachedModels.length} 个可用模型`);
-                log('success', `获取到 ${cachedModels.length} 个模型`);
+                log('success', `获取到 ${cachedModels.length} 个模型`, cachedModels.slice(0, 10));
             }
 
         } catch (error) {
@@ -558,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error.name === 'AbortError') {
                 showNotice('获取模型列表超时');
             } else {
-                showNotice(`获取模型列表失败: ${error.message}`);
+                showNotice(`获取失败: ${error.message}`);
             }
             hideModelSelect();
         } finally {
@@ -680,7 +673,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // 自定义弹窗
+    // 弹窗系统
     // ========================================
     function showModal(message) {
         return new Promise((resolve) => {
@@ -698,9 +691,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ========================================
-    // 新建弹窗
-    // ========================================
     function showCreateModal(title, placeholder) {
         return new Promise((resolve) => {
             createModalCallback = resolve;
@@ -720,9 +710,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ========================================
-    // 重命名弹窗
-    // ========================================
     function showRenameModal() {
         const session = getCurrentSession();
         if (!session) return;
@@ -748,9 +735,6 @@ document.addEventListener('DOMContentLoaded', () => {
         closeRenameModal();
     }
 
-    // ========================================
-    // 编辑消息弹窗
-    // ========================================
     function showEditModal(floor) {
         const session = getCurrentSession();
         if (!session) return;
@@ -1287,7 +1271,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // 右键/长按菜单
+    // 右键菜单
     // ========================================
     function showContextMenu(x, y, floor, role) {
         const session = getCurrentSession();
@@ -1391,9 +1375,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ========================================
-    // 重新生成
-    // ========================================
     async function regenerateMessage(floor) {
         const session = getCurrentSession();
         if (!session) return;
@@ -1433,6 +1414,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
+    // 输入框高度变化处理
+    // ========================================
+    function handleInputResize() {
+        const input = elements.messageInput;
+        input.style.height = 'auto';
+        const newHeight = Math.min(input.scrollHeight, 120);
+        input.style.height = newHeight + 'px';
+
+        // 当输入框高度超过60px时，侧边按钮变为竖向排列
+        if (newHeight > 60) {
+            elements.inputSideButtons.classList.add('vertical');
+            elements.inputArea.classList.add('expanded');
+        } else {
+            elements.inputSideButtons.classList.remove('vertical');
+            elements.inputArea.classList.remove('expanded');
+        }
+    }
+
+    // ========================================
     // 事件绑定
     // ========================================
     function bindEvents() {
@@ -1446,10 +1446,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        elements.messageInput.addEventListener('input', () => {
-            elements.messageInput.style.height = 'auto';
-            elements.messageInput.style.height = Math.min(elements.messageInput.scrollHeight, 120) + 'px';
-        });
+        elements.messageInput.addEventListener('input', handleInputResize);
 
         elements.newChatBtn.addEventListener('click', createNewSession);
 
@@ -1464,19 +1461,16 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.closeConfigBtn.addEventListener('click', closeSidebars);
         elements.overlay.addEventListener('click', closeSidebars);
 
-        // 调试面板
         elements.debugCloseBtn.addEventListener('click', () => {
             elements.debugPanel.classList.remove('active');
         });
         elements.debugClearBtn.addEventListener('click', clearDebugLogs);
         elements.debugCopyBtn.addEventListener('click', copyDebugLogs);
 
-        // 会话列表搜索
         elements.sessionSearch.addEventListener('input', (e) => {
             filterSessionsList(e.target.value);
         });
 
-        // 全局搜索
         elements.searchCloseBtn.addEventListener('click', closeSearchPanel);
         elements.searchClearBtn.addEventListener('click', () => {
             elements.globalSearchInput.value = '';
@@ -1490,14 +1484,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 300);
         });
 
-        // 弹窗事件
         elements.modalCancel.addEventListener('click', () => closeModal(false));
         elements.modalConfirm.addEventListener('click', () => closeModal(true));
         elements.modalOverlay.addEventListener('click', (e) => {
             if (e.target === elements.modalOverlay) closeModal(false);
         });
 
-        // 新建弹窗事件
         elements.createCancel.addEventListener('click', () => closeCreateModal(null));
         elements.createConfirm.addEventListener('click', () => {
             const value = elements.createInput.value.trim();
@@ -1515,7 +1507,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target === elements.createModal) closeCreateModal(null);
         });
 
-        // 重命名
         elements.mobileTitle.addEventListener('click', (e) => {
             const now = Date.now();
             if (now - lastTitleClickTime < 300) {
@@ -1539,21 +1530,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target === elements.renameModal) closeRenameModal();
         });
 
-        // 编辑消息弹窗
         elements.editCancel.addEventListener('click', closeEditModal);
         elements.editConfirm.addEventListener('click', confirmEdit);
         elements.editModal.addEventListener('click', (e) => {
             if (e.target === elements.editModal) closeEditModal();
         });
 
-        // 选择模式
         elements.selectModeBtn.addEventListener('click', toggleSelectMode);
         elements.selShowBtn.addEventListener('click', () => executeSelectionAction('show'));
         elements.selHideBtn.addEventListener('click', () => executeSelectionAction('hide'));
         elements.selDeleteBtn.addEventListener('click', () => executeSelectionAction('delete'));
         elements.selCancelBtn.addEventListener('click', exitSelectMode);
 
-        // 右键菜单
         elements.contextMenu.addEventListener('click', (e) => {
             const action = e.target.dataset.action;
             if (action) {
@@ -1562,12 +1550,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         document.addEventListener('click', (e) => {
-            if (!elements.contextMenu.contains(e.target)) {
+            if (!elements.contextMenu.contains(e.target) && !e.target.classList.contains('msg-edit-btn')) {
                 hideContextMenu();
             }
         });
 
-        // 图片相关
         elements.imageBtn.addEventListener('click', openImagePicker);
         elements.imageFileInput.addEventListener('change', handleImageSelect);
         elements.imageViewerClose.addEventListener('click', closeImageViewer);
@@ -1575,7 +1562,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target === elements.imageViewer) closeImageViewer();
         });
 
-        // API配置管理
         elements.apiConfigSelect.addEventListener('change', (e) => {
             switchApiConfig(e.target.value);
         });
@@ -1583,11 +1569,9 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.deleteApiConfigBtn.addEventListener('click', deleteApiConfig);
         elements.saveApiConfigBtn.addEventListener('click', saveCurrentApiConfig);
 
-        // 模型查询
         elements.fetchModelsBtn.addEventListener('click', fetchAvailableModels);
         elements.modelSelect.addEventListener('change', onModelSelectChange);
 
-        // 预设管理
         elements.presetSelect.addEventListener('change', (e) => {
             switchPreset(e.target.value);
         });
@@ -1624,9 +1608,15 @@ document.addEventListener('DOMContentLoaded', () => {
             saveConfig('presencePenalty', elements.presencePenalty.value);
         });
 
+        elements.maxTokens.addEventListener('input', () => {
+            elements.maxTokensValue.textContent = elements.maxTokens.value;
+        });
+        elements.maxTokens.addEventListener('change', () => {
+            saveConfig('maxTokens', elements.maxTokens.value);
+        });
+
         elements.importFileInput.addEventListener('change', handleImport);
 
-        // 快捷键
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
                 e.preventDefault();
@@ -1657,6 +1647,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.toppValue.textContent = elements.topP.value;
         elements.freqValue.textContent = elements.frequencyPenalty.value;
         elements.presValue.textContent = elements.presencePenalty.value;
+        elements.maxTokensValue.textContent = elements.maxTokens.value;
     }
 
     // ========================================
@@ -1705,7 +1696,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         switch (command) {
             case '/hide':
-            case '/del': {
+            case '/del':
+            case '/show': {
                 if (!arg) {
                     showNotice(`用法：${command} 1-5`);
                     return;
@@ -1731,6 +1723,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                     showNotice(`已隐藏 ${count} 条消息（${start}-${Math.min(end, session.messages.length)}楼）`);
+                } else if (command === '/show') {
+                    let count = 0;
+                    for (let i = startIdx; i < endIdx && i < session.messages.length; i++) {
+                        if (i >= 0 && session.messages[i].hidden) {
+                            session.messages[i].hidden = false;
+                            count++;
+                        }
+                    }
+                    showNotice(`已显示 ${count} 条消息（${start}-${Math.min(end, session.messages.length)}楼）`);
                 } else {
                     if (startIdx < 0 || startIdx >= session.messages.length) {
                         showNotice('删除范围无效');
@@ -1742,20 +1743,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 break;
             }
-            case '/show':
-                if (arg === 'all') {
-                    let count = 0;
-                    session.messages.forEach(m => {
-                        if (m.hidden) {
-                            m.hidden = false;
-                            count++;
-                        }
-                    });
-                    showNotice(`已显示 ${count} 条隐藏消息`);
-                } else {
-                    showNotice('用法：/show all');
-                }
-                break;
             case '/clear':
                 session.messages = [];
                 lastResponseTokens = 0;
@@ -1791,15 +1778,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // ========================================
     function showNotice(text) {
         const notice = document.createElement('div');
-        notice.className = 'system-notice';
+        notice.className = 'top-notice';
         notice.textContent = text;
-        elements.chatWindow.appendChild(notice);
-        elements.chatWindow.scrollTop = elements.chatWindow.scrollHeight;
+        elements.noticeContainer.appendChild(notice);
+
+        requestAnimationFrame(() => {
+            notice.classList.add('show');
+        });
 
         setTimeout(() => {
-            notice.style.transition = 'opacity 0.5s';
-            notice.style.opacity = '0';
-            setTimeout(() => notice.remove(), 500);
+            notice.classList.remove('show');
+            notice.classList.add('hide');
+            setTimeout(() => notice.remove(), 300);
         }, 3000);
     }
 
@@ -1877,7 +1867,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // API 通信
+    // API 通信 (模仿SillyTavern方式)
     // ========================================
     async function sendMessage() {
         const session = getCurrentSession();
@@ -1892,6 +1882,7 @@ document.addEventListener('DOMContentLoaded', () => {
             executeCommand(text);
             elements.messageInput.value = '';
             elements.messageInput.style.height = 'auto';
+            handleInputResize();
             return;
         }
 
@@ -1919,6 +1910,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMessages();
         elements.messageInput.value = '';
         elements.messageInput.style.height = 'auto';
+        handleInputResize();
         clearPendingImages();
 
         await requestAIResponse();
@@ -1934,8 +1926,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // 从配置中读取流式响应设置
         const useStream = config.useStream !== false;
-        const timeout = (config.timeout || 60) * 1000;
+        const timeout = (config.timeout || 120) * 1000;
 
         setLoading(true);
         abortController = new AbortController();
@@ -1947,7 +1940,6 @@ document.addEventListener('DOMContentLoaded', () => {
             messagesCount: session.messages.filter(m => !m.hidden).length
         });
 
-        // 设置超时
         const timeoutId = setTimeout(() => {
             if (abortController) {
                 abortController.abort();
@@ -1994,6 +1986,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
+            // 构建请求体 (模仿SillyTavern格式)
             const requestBody = {
                 model: config.model,
                 messages: context,
@@ -2004,18 +1997,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 presence_penalty: parseFloat(elements.presencePenalty.value)
             };
 
+            // 添加max_tokens（如果设置了）
+            const maxTokens = parseInt(elements.maxTokens.value);
+            if (maxTokens > 0) {
+                requestBody.max_tokens = maxTokens;
+            }
+
+            // 模仿SillyTavern的请求头
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${config.key}`,
+                'Accept': useStream ? 'text/event-stream' : 'application/json',
+                'x-api-key': config.key
+            };
+
             log('info', '发送请求', {
                 url: config.url,
                 model: config.model,
-                stream: useStream
+                stream: useStream,
+                headers: Object.keys(headers)
             });
+
+            log('info', '请求体', requestBody);
 
             const response = await fetch(config.url, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${config.key}`
-                },
+                headers: headers,
                 body: JSON.stringify(requestBody),
                 signal: abortController.signal
             });
@@ -2032,9 +2039,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 const errorText = await response.text();
                 log('error', 'API返回错误', {
                     status: response.status,
-                    body: errorText.substring(0, 500)
+                    body: errorText.substring(0, 1000)
                 });
-                throw new Error(`API 错误 ${response.status}: ${errorText.substring(0, 200)}`);
+
+                // 尝试解析错误信息
+                let errorMessage = `API 错误 ${response.status}`;
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    if (errorJson.error) {
+                        if (typeof errorJson.error === 'string') {
+                            errorMessage = errorJson.error;
+                        } else if (errorJson.error.message) {
+                            errorMessage = errorJson.error.message;
+                        }
+                    }
+                } catch (e) {
+                    errorMessage = errorText.substring(0, 200);
+                }
+
+                throw new Error(errorMessage);
             }
 
             const assistantMsg = { role: 'assistant', content: '', hidden: false };
@@ -2044,10 +2067,8 @@ document.addEventListener('DOMContentLoaded', () => {
             renderMessages();
 
             if (useStream) {
-                // 流式响应处理
                 await handleStreamResponse(response, session, msgIndex);
             } else {
-                // 非流式响应处理
                 await handleNonStreamResponse(response, session, msgIndex);
             }
 
@@ -2100,7 +2121,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!trimmedLine) continue;
 
                     if (!trimmedLine.startsWith('data: ')) {
-                        log('warning', '非标准SSE行', { line: trimmedLine.substring(0, 100) });
+                        // 某些API可能不使用标准SSE格式
+                        if (trimmedLine.startsWith('{')) {
+                            try {
+                                const json = JSON.parse(trimmedLine);
+                                const content = json.choices?.[0]?.delta?.content ||
+                                               json.choices?.[0]?.message?.content || '';
+                                if (content) {
+                                    receivedAnyContent = true;
+                                    session.messages[msgIndex].content += content;
+                                    updateLastMessage(session.messages[msgIndex]);
+                                }
+                            } catch (e) {
+                                log('warning', '非标准格式解析失败', { line: trimmedLine.substring(0, 100) });
+                            }
+                        }
                         continue;
                     }
 
@@ -2143,7 +2178,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             log('info', '非流式响应数据', data);
 
-            const content = data.choices?.[0]?.message?.content || '';
+            const content = data.choices?.[0]?.message?.content ||
+                           data.content ||
+                           data.response ||
+                           '';
 
             if (content) {
                 session.messages[msgIndex].content = content;
@@ -2202,7 +2240,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <p>输入消息开始聊天，或使用以下快捷操作</p>
             <div class="welcome-tips">
                 <div class="tip-item">📝 双击标题可重命名</div>
-                <div class="tip-item">👆 长按消息可快速操作</div>
+                <div class="tip-item">✏️ 点击消息右上角铅笔可快速操作</div>
                 <div class="tip-item">🖼️ 点击图片按钮可发送图片</div>
                 <div class="tip-item">🔍 Ctrl+F 搜索所有对话</div>
                 <div class="tip-item">🔧 点击调试按钮查看日志</div>
@@ -2223,6 +2261,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        if (!isSelectMode) {
+            const editBtn = document.createElement('button');
+            editBtn.className = 'msg-edit-btn';
+            editBtn.textContent = '✏️';
+            editBtn.title = '操作菜单';
+            editBtn.onclick = (e) => {
+                e.stopPropagation();
+                const rect = editBtn.getBoundingClientRect();
+                showContextMenu(rect.left, rect.bottom + 5, floor, msg.role);
+            };
+            msgDiv.appendChild(editBtn);
+        }
+
         const metaDiv = document.createElement('div');
         metaDiv.className = 'message-meta';
 
@@ -2241,7 +2292,23 @@ document.addEventListener('DOMContentLoaded', () => {
         metaDiv.appendChild(floorSpan);
         metaDiv.appendChild(tokenSpan);
 
-        // 渲染图片
+        if (msg.hidden) {
+            const hiddenIndicator = document.createElement('span');
+            hiddenIndicator.className = 'hidden-indicator';
+            hiddenIndicator.title = '此消息已隐藏（不计入上下文）';
+
+            const eye = document.createElement('span');
+            eye.className = 'hidden-eye';
+            eye.textContent = '👁‍🗨';
+
+            const label = document.createElement('span');
+            label.textContent = '隐藏';
+
+            hiddenIndicator.appendChild(eye);
+            hiddenIndicator.appendChild(label);
+            metaDiv.appendChild(hiddenIndicator);
+        }
+
         if (msg.images && msg.images.length > 0) {
             const imagesDiv = document.createElement('div');
             imagesDiv.className = 'message-images';
@@ -2273,31 +2340,10 @@ document.addEventListener('DOMContentLoaded', () => {
         msgDiv.appendChild(metaDiv);
         msgDiv.appendChild(contentDiv);
 
-        // 事件绑定
         if (isSelectMode) {
             msgDiv.addEventListener('click', (e) => {
                 e.preventDefault();
                 toggleFloorSelection(floor);
-            });
-        } else {
-            msgDiv.addEventListener('touchstart', (e) => {
-                longPressTimer = setTimeout(() => {
-                    const touch = e.touches[0];
-                    showContextMenu(touch.clientX, touch.clientY, floor, msg.role);
-                }, 500);
-            }, { passive: true });
-
-            msgDiv.addEventListener('touchend', () => {
-                clearTimeout(longPressTimer);
-            });
-
-            msgDiv.addEventListener('touchmove', () => {
-                clearTimeout(longPressTimer);
-            });
-
-            msgDiv.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                showContextMenu(e.clientX, e.clientY, floor, msg.role);
             });
         }
 
@@ -2319,7 +2365,6 @@ document.addEventListener('DOMContentLoaded', () => {
             log('warning', 'Markdown渲染失败', { error: e.message });
         }
 
-        // 降级处理：简单的文本转换
         return escapeHtml(text)
             .replace(/\n/g, '<br>')
             .replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -2345,10 +2390,8 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.chatWindow.querySelectorAll('pre code').forEach(codeBlock => {
             const pre = codeBlock.parentElement;
 
-            // 避免重复处理
             if (pre.parentElement.classList.contains('code-block-wrapper')) return;
 
-            // 检测语言
             const classes = codeBlock.className.split(' ');
             let lang = '';
             for (const cls of classes) {
@@ -2358,37 +2401,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // 创建包装器
             const wrapper = document.createElement('div');
-            wrapper.className = 'code-block-wrapper';
+            wrapper.className = 'code-block-wrapper collapsed';
 
-            // 创建头部
             const header = document.createElement('div');
             header.className = 'code-block-header';
+
+            const leftPart = document.createElement('div');
+            leftPart.className = 'code-header-left';
+
+            const toggleBtn = document.createElement('button');
+            toggleBtn.className = 'code-toggle-btn';
+            toggleBtn.textContent = '▶';
+            toggleBtn.title = '展开/折叠代码';
 
             const langSpan = document.createElement('span');
             langSpan.className = 'code-block-lang';
             langSpan.textContent = lang || 'code';
 
+            leftPart.appendChild(toggleBtn);
+            leftPart.appendChild(langSpan);
+
             const copyBtn = document.createElement('button');
             copyBtn.className = 'code-copy-btn';
             copyBtn.textContent = '复制';
-            copyBtn.onclick = () => {
+            copyBtn.onclick = (e) => {
+                e.stopPropagation();
                 navigator.clipboard.writeText(codeBlock.textContent).then(() => {
                     copyBtn.textContent = '已复制';
                     setTimeout(() => copyBtn.textContent = '复制', 2000);
                 });
             };
 
-            header.appendChild(langSpan);
+            header.appendChild(leftPart);
             header.appendChild(copyBtn);
 
-            // 组装
+            header.addEventListener('click', (e) => {
+                if (e.target === copyBtn) return;
+                wrapper.classList.toggle('collapsed');
+                toggleBtn.textContent = wrapper.classList.contains('collapsed') ? '▶' : '▼';
+            });
+
             pre.parentNode.insertBefore(wrapper, pre);
             wrapper.appendChild(header);
             wrapper.appendChild(pre);
 
-            // 高亮
             if (window.hljs && lang && hljs.getLanguage(lang)) {
                 hljs.highlightElement(codeBlock);
             }
