@@ -3,22 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>长安的 AI 助手</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: blob:; connect-src *; font-src 'self' https://cdn.jsdelivr.net;">
+    <title>AI 助手</title>
+
+    <!-- PWA 配置 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/512x512/1f4ac.png">
+    <link rel="icon" type="image/png" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/32x32/1f4ac.png">
+
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"
+        integrity="sha384-UjGEBSMaHBMBbGQFMXqFRUhR5mSsFfOEjJDqdCnY9FB7bccYsHfnGMBhA6pLMeZ"
+        crossorigin="anonymous"></script>
     <script>
         if (typeof marked === 'undefined') {
-            document.write('<script src="https://unpkg.com/marked/marked.min.js"><\/script>');
+            var s = document.createElement('script');
+            s.src = 'https://unpkg.com/marked@12.0.2/marked.min.js';
+            document.head.appendChild(s);
         }
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"
+        integrity="sha384-rSAVjtQ7O0s4aNnBq7xbv/Im9cY+ypJnNs1JFEBYfH1PcaqGNHyUaWGHh2jkhWc"
+        crossorigin="anonymous"></script>
     <script>
         if (typeof DOMPurify === 'undefined') {
-            document.write('<script src="https://unpkg.com/dompurify@3.0.6/dist/purify.min.js"><\/script>');
+            var s2 = document.createElement('script');
+            s2.src = 'https://unpkg.com/dompurify@3.0.6/dist/purify.min.js';
+            document.head.appendChild(s2);
         }
     </script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css"
+        integrity="sha384-rqJAaCBMFjfBMVNaFnxEzMVRMmhL3e+PC8k9J3oeAkF/e5UN+5FI24fFnGMRnv5"
+        crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"
+        integrity="sha384-mFmAEMIRMBDRiiqqO8VKYszpNsHBBdGUbxBLBHcOcSJe6Y0VCBBnYMk3AnZBk+N"
+        crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/css.min.js"></script>
@@ -57,6 +79,7 @@
             <div class="sessions-list" id="sessions-list"></div>
             <div class="sidebar-footer">
                 <button class="toggle-config-btn" id="toggle-config-btn">⚙️ 设置</button>
+                <div class="privacy-badge" title="所有数据仅存储在您的浏览器本地，不会上传到任何服务器">🔒 数据仅存本地</div>
             </div>
         </aside>
 
@@ -81,11 +104,11 @@
                 <div class="config-group">
                     <label>聊天补全端点 (完整URL)</label>
                     <input type="text" id="api-url" placeholder="https://api.example.com/v1/chat/completions">
-                    <span class="config-hint">直接输入完整的聊天补全API地址</span>
+                    <span class="config-hint">请输入完整URL，必须以 http:// 或 https:// 开头</span>
                 </div>
                 <div class="config-group">
                     <label>API Key</label>
-                    <input type="password" id="api-key" placeholder="sk-...">
+                    <input type="password" id="api-key" placeholder="sk-..." autocomplete="off">
                 </div>
                 <div class="config-group">
                     <label>模型名称</label>
@@ -111,6 +134,7 @@
                     <input type="number" id="request-timeout" value="120" min="10" max="600">
                 </div>
                 <button class="save-preset-btn" id="save-api-config-btn">💾 保存当前配置</button>
+                <button class="test-api-btn" id="test-api-btn">🔗 测试连接</button>
 
                 <!-- 预设管理 -->
                 <h3>🎭 系统预设</h3>
@@ -171,12 +195,23 @@
                         <li><code>/hide 5-30</code> 隐藏楼层</li>
                         <li><code>/del 5-10</code> 删除楼层</li>
                         <li><code>/show 5-10</code> 显示楼层</li>
+                        <li><code>/goto 15</code> 跳转到指定楼层</li>
                         <li><code>/rename 新名称</code> 重命名</li>
                         <li><code>/clear</code> 清空对话</li>
                         <li><code>/export</code> 导出对话</li>
                         <li><code>/import</code> 导入对话</li>
                     </ul>
                     <p class="info-tip">💡 点击消息右上角铅笔图标可快速操作</p>
+                </div>
+
+                <h3>🔒 隐私与安全</h3>
+                <div class="privacy-box">
+                    <p>✅ 所有数据（API密钥、聊天记录、配置）<strong>仅存储在您的浏览器本地</strong>（localStorage）</p>
+                    <p>✅ 不包含任何数据分析、追踪或统计代码</p>
+                    <p>✅ API请求仅发送至您自行配置的端点地址</p>
+                    <p>✅ CDN资源使用 SRI 完整性校验</p>
+                    <p>⚠️ 请确保您的API端点使用 HTTPS 协议</p>
+                    <button class="danger-btn" id="clear-all-data-btn">🗑️ 清除所有本地数据</button>
                 </div>
             </div>
         </aside>

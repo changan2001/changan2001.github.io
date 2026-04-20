@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addApiConfigBtn: $('add-api-config-btn'),
         deleteApiConfigBtn: $('delete-api-config-btn'),
         saveApiConfigBtn: $('save-api-config-btn'),
+        testApiBtn: $('test-api-btn'),
         fetchModelsBtn: $('fetch-models-btn'),
         modelSelect: $('model-select'),
         modelSelectGroup: $('model-select-group'),
@@ -100,7 +101,8 @@ document.addEventListener('DOMContentLoaded', () => {
         imageViewer: $('image-viewer'),
         imageViewerClose: $('image-viewer-close'),
         imageViewerImg: $('image-viewer-img'),
-        noticeContainer: $('notice-container')
+        noticeContainer: $('notice-container'),
+        clearAllDataBtn: $('clear-all-data-btn')
     };
 
     // ========================================
@@ -127,6 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let pendingImages = [];
     let searchDebounceTimer = null;
     let debugLogs = [];
+    let renderBatchId = 0;
 
     // ========================================
     // 调试日志系统
@@ -195,6 +198,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         navigator.clipboard.writeText(text).then(() => {
             showNotice('日志已复制到剪贴板');
+        }).catch(() => {
+            showNotice('复制失败');
         });
     }
 
@@ -282,9 +287,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const defaultConfig = {
                 id: 'default',
                 name: '默认配置',
-                url: localStorage.getItem('apiUrl') || '',
-                key: localStorage.getItem('apiKey') || '',
-                model: localStorage.getItem('apiModel') || 'gpt-4o',
+                url: '',
+                key: '',
+                model: 'gpt-4o',
                 useStream: true,
                 timeout: 120
             };
@@ -316,11 +321,104 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveSessions() {
-        localStorage.setItem('sessions', JSON.stringify(sessions));
+        // 保存前清除渲染缓存，避免缓存数据污染 localStorage
+        const cleanedSessions = sessions.map(session => ({
+            ...session,
+            messages: session.messages.map(msg => {
+                const clean = { role: msg.role, content: msg.content };
+                if (msg.hidden) clean.hidden = true;
+                if (msg.images) clean.images = msg.images;
+                return clean;
+            })
+        }));
+        localStorage.setItem('sessions', JSON.stringify(cleanedSessions));
     }
 
     function saveConfig(key, value) {
         localStorage.setItem(key, value);
+    }
+
+    // ========================================
+    // 清除所有本地数据
+    // ========================================
+    async function clearAllLocalData() {
+        const confirmed = await showModal('⚠️ 这将删除所有本地数据（对话记录、API配置、预设等），确定继续吗？此操作不可撤销！');
+        if (!confirmed) return;
+
+        const doubleConfirm = await showModal('再次确认：真的要清除所有数据吗？');
+        if (!doubleConfirm) return;
+
+        localStorage.clear();
+        showNotice('所有本地数据已清除，页面即将刷新...');
+        setTimeout(() => {
+            location.reload();
+        }, 1500);
+    }
+
+    // ========================================
+    // URL 验证与规范化
+    // ========================================
+    function normalizeApiUrl(rawUrl) {
+        if (!rawUrl) return '';
+
+        let url = rawUrl.trim();
+
+        // 去除末尾斜杠
+        url = url.replace(/\/+$/, '');
+
+        // 如果没有协议头，自动添加 https://
+        if (!/^https?:\/\//i.test(url)) {
+            url = 'https://' + url;
+            log('info', 'URL自动补全协议头', { original: rawUrl, normalized: url });
+        }
+
+        // 验证URL格式
+        try {
+            new URL(url);
+        } catch (e) {
+            log('error', 'URL格式无效', { url: url, error: e.message });
+            return '';
+        }
+
+        // 如果URL不包含 /chat/completions，且看起来像是 base URL，自动补全
+        if (!url.includes('/chat/completions')) {
+            // 检查是否只到了 /v1 或 /v1/ 这种级别
+            if (/\/v\d+\/?$/i.test(url)) {
+                url = url + '/chat/completions';
+                log('info', 'URL自动补全路径', { original: rawUrl, normalized: url });
+            }
+        }
+
+        return url;
+    }
+
+    function validateApiUrl(url) {
+        if (!url) {
+            return { valid: false, message: 'URL不能为空' };
+        }
+
+        try {
+            const parsed = new URL(url);
+
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return { valid: false, message: 'URL必须使用 http 或 https 协议' };
+            }
+
+            if (!parsed.hostname) {
+                return { valid: false, message: 'URL缺少主机名' };
+            }
+
+            if (!url.includes('/chat/completions')) {
+                return {
+                    valid: true,
+                    warning: 'URL中不包含 /chat/completions 路径，请确认是否正确'
+                };
+            }
+
+            return { valid: true };
+        } catch (e) {
+            return { valid: false, message: `URL格式无效: ${e.message}` };
+        }
     }
 
     // ========================================
@@ -355,8 +453,28 @@ document.addEventListener('DOMContentLoaded', () => {
     function saveCurrentApiConfig() {
         const config = apiConfigs.find(c => c.id === currentApiConfigId);
         if (config) {
+            const rawUrl = elements.apiUrl.value.trim();
+            const normalizedUrl = normalizeApiUrl(rawUrl);
+
+            // 验证URL
+            const validation = validateApiUrl(normalizedUrl);
+            if (!validation.valid) {
+                showNotice(`URL错误: ${validation.message}`);
+                log('error', 'API URL验证失败', { url: rawUrl, message: validation.message });
+                return;
+            }
+
+            if (validation.warning) {
+                log('warning', validation.warning, { url: normalizedUrl });
+            }
+
+            // 如果URL被规范化了，更新输入框
+            if (normalizedUrl !== rawUrl) {
+                elements.apiUrl.value = normalizedUrl;
+            }
+
             config.name = elements.apiConfigName.value.trim() || '未命名配置';
-            config.url = elements.apiUrl.value.trim();
+            config.url = normalizedUrl;
             config.key = elements.apiKey.value.trim();
             config.model = elements.apiModel.value.trim();
             config.useStream = elements.useStream.checked;
@@ -364,7 +482,12 @@ document.addEventListener('DOMContentLoaded', () => {
             saveApiConfigs();
             renderApiConfigSelect();
             showNotice('API配置已保存');
-            log('info', 'API配置已保存', { name: config.name, useStream: config.useStream });
+            log('info', 'API配置已保存', {
+                name: config.name,
+                url: config.url,
+                model: config.model,
+                useStream: config.useStream
+            });
         }
     }
 
@@ -416,29 +539,131 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // 模型列表查询 (模仿SillyTavern方式)
+    // API 连接测试
+    // ========================================
+    async function testApiConnection() {
+        const rawUrl = elements.apiUrl.value.trim();
+        const apiKey = elements.apiKey.value.trim();
+        const model = elements.apiModel.value.trim();
+
+        if (!rawUrl) {
+            showNotice('请先填写 API URL');
+            return;
+        }
+
+        if (!apiKey) {
+            showNotice('请先填写 API Key');
+            return;
+        }
+
+        const normalizedUrl = normalizeApiUrl(rawUrl);
+        const validation = validateApiUrl(normalizedUrl);
+        if (!validation.valid) {
+            showNotice(`URL错误: ${validation.message}`);
+            return;
+        }
+
+        // 更新输入框中的URL
+        if (normalizedUrl !== rawUrl) {
+            elements.apiUrl.value = normalizedUrl;
+        }
+
+        elements.testApiBtn.disabled = true;
+        elements.testApiBtn.textContent = '🔗 测试中...';
+
+        log('info', '开始测试API连接', { url: normalizedUrl, model: model || 'gpt-4o' });
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+            const requestBody = {
+                model: model || 'gpt-4o',
+                messages: [{ role: 'user', content: 'Hi' }],
+                max_tokens: 5,
+                stream: false
+            };
+
+            const response = await fetch(normalizedUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Accept': 'application/json',
+                    'x-api-key': apiKey
+                },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            log('info', '测试连接响应', {
+                status: response.status,
+                statusText: response.statusText,
+                contentType: response.headers.get('content-type')
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const content = data.choices?.[0]?.message?.content || '';
+                showNotice(`✅ 连接成功！模型 ${model} 已响应`);
+                log('success', '连接测试成功', {
+                    model: data.model || model,
+                    response: content.substring(0, 100)
+                });
+            } else {
+                const errorText = await response.text();
+                log('error', '连接测试失败', {
+                    status: response.status,
+                    body: errorText.substring(0, 500)
+                });
+
+                let errorMsg = `HTTP ${response.status}`;
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    if (errorJson.error) {
+                        errorMsg = typeof errorJson.error === 'string'
+                            ? errorJson.error
+                            : (errorJson.error.message || errorMsg);
+                    }
+                } catch (e) {
+                    errorMsg = errorText.substring(0, 200);
+                }
+
+                showNotice(`❌ 连接失败: ${errorMsg}`);
+            }
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                showNotice('❌ 连接超时');
+                log('error', '连接测试超时');
+            } else {
+                showNotice(`❌ 连接错误: ${error.message}`);
+                log('error', '连接测试错误', { error: error.message });
+            }
+        } finally {
+            elements.testApiBtn.disabled = false;
+            elements.testApiBtn.textContent = '🔗 测试连接';
+        }
+    }
+
+    // ========================================
+    // 模型列表查询
     // ========================================
     function getModelsEndpoint(chatUrl) {
         try {
             const url = new URL(chatUrl);
-            // 从chat/completions路径推断models路径
-            let pathname = url.pathname;
+            let pathname = url.pathname.replace(/\/+$/, '');
 
-            // 移除末尾的斜杠
-            pathname = pathname.replace(/\/+$/, '');
-
-            // 尝试多种路径模式
             if (pathname.includes('/chat/completions')) {
                 pathname = pathname.replace('/chat/completions', '/models');
             } else if (pathname.includes('/completions')) {
                 pathname = pathname.replace('/completions', '/models');
             } else {
-                // 尝试在版本号后添加/models
                 const versionMatch = pathname.match(/(\/v\d+)/);
                 if (versionMatch) {
                     pathname = pathname.substring(0, pathname.indexOf(versionMatch[1]) + versionMatch[1].length) + '/models';
                 } else {
-                    // 直接在末尾添加/models
                     pathname = pathname + '/models';
                 }
             }
@@ -452,7 +677,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchAvailableModels() {
-        const apiUrl = elements.apiUrl.value.trim();
+        let apiUrl = elements.apiUrl.value.trim();
         const apiKey = elements.apiKey.value.trim();
 
         if (!apiUrl) {
@@ -465,8 +690,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // 先规范化URL
+        apiUrl = normalizeApiUrl(apiUrl);
+        if (apiUrl !== elements.apiUrl.value.trim()) {
+            elements.apiUrl.value = apiUrl;
+        }
+
         const modelsUrl = getModelsEndpoint(apiUrl);
-        log('info', '开始获取模型列表', { url: modelsUrl });
+        log('info', '开始获取模型列表', { chatUrl: apiUrl, modelsUrl: modelsUrl });
 
         elements.fetchModelsBtn.disabled = true;
         elements.fetchModelsBtn.classList.add('loading');
@@ -475,12 +706,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-            // 模仿SillyTavern的请求头
             const headers = {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'x-api-key': apiKey  // 某些API使用这个头
+                'x-api-key': apiKey
             };
 
             const response = await fetch(modelsUrl, {
@@ -504,7 +734,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let models = [];
 
-            // 支持多种响应格式
             if (Array.isArray(data)) {
                 models = data;
             } else if (data.data && Array.isArray(data.data)) {
@@ -520,7 +749,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return m.id || m.name || m.model || (typeof m === 'object' ? JSON.stringify(m) : String(m));
             }).filter(Boolean);
 
-            // 排序：常用模型优先
             cachedModels.sort((a, b) => {
                 const priority = ['gpt-4', 'gpt-3.5', 'claude', 'gemini', 'llama', 'mistral'];
                 const aLower = a.toLowerCase();
@@ -744,11 +972,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         editingFloor = floor;
         elements.editContent.value = msg.content;
-        elements.editResend.checked = true;
+        elements.editResend.checked = (msg.role === 'user');
+
+        // 如果是AI消息，隐藏"重新发送"选项
+        const editOptionEl = elements.editResend.closest('.edit-option');
+        if (editOptionEl) {
+            editOptionEl.style.display = msg.role === 'user' ? '' : 'none';
+        }
+
         elements.editModal.classList.add('active');
         setTimeout(() => {
             elements.editContent.focus();
-            elements.editContent.setSelectionRange(elements.editContent.value.length, elements.editContent.value.length);
+            elements.editContent.setSelectionRange(
+                elements.editContent.value.length,
+                elements.editContent.value.length
+            );
         }, 100);
     }
 
@@ -780,12 +1018,72 @@ document.addEventListener('DOMContentLoaded', () => {
             await sendMessage();
         } else {
             msg.content = newContent;
+            // 清除缓存
+            delete msg._renderedHtml;
+            delete msg._renderedSource;
             saveSessions();
-            renderMessages();
+
+            const anchorFloor = editingFloor;
+            const anchorOffset = getFloorOffset(anchorFloor);
+            renderMessages(false, anchorFloor, anchorOffset);
             updateTokenDisplay();
             closeEditModal();
             showNotice('消息已修改');
         }
+    }
+
+    // ========================================
+    // 滚动位置管理
+    // ========================================
+    function getFirstVisibleFloor() {
+        const chatWindow = elements.chatWindow;
+        const msgs = chatWindow.querySelectorAll('.message[data-floor]');
+        const containerRect = chatWindow.getBoundingClientRect();
+
+        for (const msgDiv of msgs) {
+            const rect = msgDiv.getBoundingClientRect();
+            if (rect.top >= containerRect.top - 10 || rect.bottom > containerRect.top + 10) {
+                return parseInt(msgDiv.dataset.floor);
+            }
+        }
+
+        if (msgs.length > 0) {
+            return parseInt(msgs[msgs.length - 1].dataset.floor);
+        }
+        return null;
+    }
+
+    function getFloorOffset(floor) {
+        const chatWindow = elements.chatWindow;
+        const msgDiv = chatWindow.querySelector(`.message[data-floor="${floor}"]`);
+        if (msgDiv) {
+            const containerRect = chatWindow.getBoundingClientRect();
+            const msgRect = msgDiv.getBoundingClientRect();
+            return msgRect.top - containerRect.top;
+        }
+        return 0;
+    }
+
+    function scrollToFloorWithOffset(floor, offset) {
+        const chatWindow = elements.chatWindow;
+        const msgDiv = chatWindow.querySelector(`.message[data-floor="${floor}"]`);
+        if (msgDiv) {
+            const containerRect = chatWindow.getBoundingClientRect();
+            const msgRect = msgDiv.getBoundingClientRect();
+            const currentOffset = msgRect.top - containerRect.top;
+            chatWindow.scrollTop += (currentOffset - offset);
+        }
+    }
+
+    function findNearestFloor(targetFloor, totalMessages) {
+        if (totalMessages === 0) return null;
+        if (targetFloor >= 1 && targetFloor <= totalMessages) {
+            return targetFloor;
+        }
+        if (targetFloor > totalMessages) {
+            return totalMessages;
+        }
+        return 1;
     }
 
     // ========================================
@@ -899,7 +1197,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (result.floor) {
                     setTimeout(() => {
                         scrollToFloor(result.floor);
-                    }, 100);
+                    }, 300);
                 }
             });
 
@@ -943,6 +1241,8 @@ document.addEventListener('DOMContentLoaded', () => {
             msgDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
             msgDiv.classList.add('highlight');
             setTimeout(() => msgDiv.classList.remove('highlight'), 2000);
+        } else {
+            showNotice(`找不到第 ${floor} 楼`);
         }
     }
 
@@ -1072,7 +1372,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.mobileTitle.textContent = session.title;
             exitSelectMode();
             clearPendingImages();
-            renderMessages();
+            renderMessages(true);
             updateTokenDisplay();
         }
         renderSessionsList();
@@ -1136,6 +1436,10 @@ document.addEventListener('DOMContentLoaded', () => {
             title.className = 'session-title';
             title.textContent = session.title;
 
+            const meta = document.createElement('span');
+            meta.className = 'session-meta';
+            meta.textContent = `${session.messages.length}条`;
+
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'session-delete';
             deleteBtn.textContent = '✕';
@@ -1145,6 +1449,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             item.appendChild(title);
+            item.appendChild(meta);
             item.appendChild(deleteBtn);
             item.onclick = () => switchSession(session.id);
 
@@ -1163,10 +1468,20 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.inputArea.classList.add('hidden');
         elements.imagePreviewBar.classList.remove('active');
         updateSelectionUI();
-        renderMessages();
+
+        // 记录位置后重新渲染
+        const anchorFloor = getFirstVisibleFloor();
+        const anchorOffset = anchorFloor ? getFloorOffset(anchorFloor) : 0;
+        renderMessages(false, anchorFloor, anchorOffset);
     }
 
     function exitSelectMode() {
+        if (!isSelectMode) return;
+
+        // 记录位置
+        const anchorFloor = getFirstVisibleFloor();
+        const anchorOffset = anchorFloor ? getFloorOffset(anchorFloor) : 0;
+
         isSelectMode = false;
         selectedFloors.clear();
         elements.selectModeBtn.classList.remove('active');
@@ -1175,7 +1490,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pendingImages.length > 0) {
             elements.imagePreviewBar.classList.add('active');
         }
-        renderMessages();
+
+        renderMessages(false, anchorFloor, anchorOffset);
     }
 
     function toggleSelectMode() {
@@ -1226,6 +1542,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const session = getCurrentSession();
         if (!session || selectedFloors.size === 0) return;
 
+        const anchorFloor = getFirstVisibleFloor();
+        const anchorOffset = anchorFloor ? getFloorOffset(anchorFloor) : 0;
+
         const floors = Array.from(selectedFloors).sort((a, b) => a - b);
 
         if (action === 'delete') {
@@ -1266,7 +1585,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         saveSessions();
-        exitSelectMode();
+
+        // 退出选择模式
+        isSelectMode = false;
+        selectedFloors.clear();
+        elements.selectModeBtn.classList.remove('active');
+        elements.selectionBar.classList.remove('active');
+        elements.inputArea.classList.remove('hidden');
+        if (pendingImages.length > 0) {
+            elements.imagePreviewBar.classList.add('active');
+        }
+
+        let restoreFloor = anchorFloor;
+        if (action === 'delete' && anchorFloor) {
+            restoreFloor = findNearestFloor(anchorFloor, session.messages.length);
+        }
+
+        renderMessages(false, restoreFloor, anchorOffset);
         updateTokenDisplay();
     }
 
@@ -1280,6 +1615,7 @@ document.addEventListener('DOMContentLoaded', () => {
         contextTargetFloor = floor;
         contextTargetRole = role;
         const msg = session.messages[floor - 1];
+        if (!msg) return;
 
         const showBtn = elements.contextMenu.querySelector('[data-action="show"]');
         const hideBtn = elements.contextMenu.querySelector('[data-action="hide"]');
@@ -1329,9 +1665,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const idx = contextTargetFloor - 1;
         const msg = session.messages[idx];
+        if (!msg) return;
         const floor = contextTargetFloor;
 
         hideContextMenu();
+
+        const anchorFloor = getFirstVisibleFloor();
+        const anchorOffset = anchorFloor ? getFloorOffset(anchorFloor) : 0;
 
         switch (action) {
             case 'copy':
@@ -1339,7 +1679,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     await navigator.clipboard.writeText(msg.content);
                     showNotice('已复制到剪贴板');
                 } catch (e) {
-                    showNotice('复制失败');
+                    const textarea = document.createElement('textarea');
+                    textarea.value = msg.content;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    try {
+                        document.execCommand('copy');
+                        showNotice('已复制到剪贴板');
+                    } catch (e2) {
+                        showNotice('复制失败');
+                    }
+                    document.body.removeChild(textarea);
                 }
                 break;
             case 'edit':
@@ -1350,28 +1702,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'hide':
                 msg.hidden = true;
+                // 清除缓存以触发重新渲染
+                delete msg._renderedHtml;
+                delete msg._renderedSource;
                 saveSessions();
-                renderMessages();
+                renderMessages(false, anchorFloor, anchorOffset);
                 updateTokenDisplay();
                 showNotice(`已隐藏第 ${floor} 楼`);
                 break;
             case 'show':
                 msg.hidden = false;
+                delete msg._renderedHtml;
+                delete msg._renderedSource;
                 saveSessions();
-                renderMessages();
+                renderMessages(false, anchorFloor, anchorOffset);
                 updateTokenDisplay();
                 showNotice(`已显示第 ${floor} 楼`);
                 break;
-            case 'delete':
+            case 'delete': {
                 const confirmed = await showModal(`确定删除第 ${floor} 楼消息吗？`);
                 if (confirmed) {
                     session.messages.splice(idx, 1);
                     saveSessions();
-                    renderMessages();
+                    const restoreFloor = findNearestFloor(anchorFloor, session.messages.length);
+                    renderMessages(false, restoreFloor, anchorOffset);
                     updateTokenDisplay();
                     showNotice(`已删除第 ${floor} 楼`);
                 }
                 break;
+            }
         }
     }
 
@@ -1389,7 +1748,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         session.messages = session.messages.slice(0, idx);
         saveSessions();
-        renderMessages();
+        renderMessages(true);
 
         await requestAIResponse();
     }
@@ -1422,7 +1781,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const newHeight = Math.min(input.scrollHeight, 120);
         input.style.height = newHeight + 'px';
 
-        // 当输入框高度超过60px时，侧边按钮变为竖向排列
         if (newHeight > 60) {
             elements.inputSideButtons.classList.add('vertical');
             elements.inputArea.classList.add('expanded');
@@ -1507,7 +1865,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target === elements.createModal) closeCreateModal(null);
         });
 
-        elements.mobileTitle.addEventListener('click', (e) => {
+        elements.mobileTitle.addEventListener('click', () => {
             const now = Date.now();
             if (now - lastTitleClickTime < 300) {
                 showRenameModal();
@@ -1543,9 +1901,12 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.selCancelBtn.addEventListener('click', exitSelectMode);
 
         elements.contextMenu.addEventListener('click', (e) => {
-            const action = e.target.dataset.action;
-            if (action) {
-                executeContextAction(action);
+            const item = e.target.closest('.context-item');
+            if (item) {
+                const action = item.dataset.action;
+                if (action) {
+                    executeContextAction(action);
+                }
             }
         });
 
@@ -1568,6 +1929,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.addApiConfigBtn.addEventListener('click', addApiConfig);
         elements.deleteApiConfigBtn.addEventListener('click', deleteApiConfig);
         elements.saveApiConfigBtn.addEventListener('click', saveCurrentApiConfig);
+        elements.testApiBtn.addEventListener('click', testApiConnection);
 
         elements.fetchModelsBtn.addEventListener('click', fetchAvailableModels);
         elements.modelSelect.addEventListener('change', onModelSelectChange);
@@ -1579,7 +1941,6 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.deletePresetBtn.addEventListener('click', deletePreset);
         elements.savePresetBtn.addEventListener('click', saveCurrentPreset);
 
-        // 参数滑块
         elements.temperature.addEventListener('input', () => {
             elements.tempValue.textContent = elements.temperature.value;
         });
@@ -1616,6 +1977,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         elements.importFileInput.addEventListener('change', handleImport);
+
+        if (elements.clearAllDataBtn) {
+            elements.clearAllDataBtn.addEventListener('click', clearAllLocalData);
+        }
+
+        // URL 输入框失焦时自动规范化
+        elements.apiUrl.addEventListener('blur', () => {
+            const rawUrl = elements.apiUrl.value.trim();
+            if (rawUrl) {
+                const normalized = normalizeApiUrl(rawUrl);
+                if (normalized && normalized !== rawUrl) {
+                    elements.apiUrl.value = normalized;
+                    log('info', 'URL已自动规范化', { from: rawUrl, to: normalized });
+                }
+            }
+        });
 
         document.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
@@ -1690,19 +2067,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const session = getCurrentSession();
         if (!session) return;
 
+        const anchorFloor = getFirstVisibleFloor();
+        const anchorOffset = anchorFloor ? getFloorOffset(anchorFloor) : 0;
+
         const parts = input.trim().split(/\s+/);
         const command = parts[0].toLowerCase();
         const arg = parts.slice(1).join(' ');
 
         switch (command) {
+            case '/goto': {
+                if (!arg) {
+                    showNotice('用法：/goto 楼层号');
+                    return;
+                }
+                const targetFloor = parseInt(arg);
+                if (isNaN(targetFloor) || targetFloor < 1) {
+                    showNotice('请输入有效的楼层号');
+                    return;
+                }
+                if (targetFloor > session.messages.length) {
+                    showNotice(`最大楼层号为 ${session.messages.length}`);
+                    return;
+                }
+                scrollToFloor(targetFloor);
+                return; // 不需要重新渲染
+            }
             case '/hide':
             case '/del':
             case '/show': {
                 if (!arg) {
-                    showNotice(`用法：${command} 1-5`);
+                    showNotice(`用法：${command} 1-5 或 ${command} 5`);
                     return;
                 }
-                const range = arg.split('-').map(Number);
+                const range = arg.split('-').map(s => parseInt(s.trim()));
                 let [start, end] = range;
                 if (isNaN(start)) {
                     showNotice('无效的楼层数字');
@@ -1711,33 +2108,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 end = isNaN(end) ? start : end;
                 if (start > end) [start, end] = [end, start];
 
+                // 边界检查
+                start = Math.max(1, start);
+                end = Math.min(end, session.messages.length);
+
+                if (start > session.messages.length) {
+                    showNotice(`楼层范围超出（最大 ${session.messages.length}）`);
+                    return;
+                }
+
                 const startIdx = start - 1;
                 const endIdx = end;
 
                 if (command === '/hide') {
                     let count = 0;
-                    for (let i = startIdx; i < endIdx && i < session.messages.length; i++) {
-                        if (i >= 0) {
-                            session.messages[i].hidden = true;
-                            count++;
-                        }
+                    for (let i = startIdx; i < endIdx; i++) {
+                        session.messages[i].hidden = true;
+                        count++;
                     }
-                    showNotice(`已隐藏 ${count} 条消息（${start}-${Math.min(end, session.messages.length)}楼）`);
+                    showNotice(`已隐藏 ${count} 条消息（${start}-${end}楼）`);
                 } else if (command === '/show') {
                     let count = 0;
-                    for (let i = startIdx; i < endIdx && i < session.messages.length; i++) {
-                        if (i >= 0 && session.messages[i].hidden) {
+                    for (let i = startIdx; i < endIdx; i++) {
+                        if (session.messages[i].hidden) {
                             session.messages[i].hidden = false;
+                            delete session.messages[i]._renderedHtml;
+                            delete session.messages[i]._renderedSource;
                             count++;
                         }
                     }
-                    showNotice(`已显示 ${count} 条消息（${start}-${Math.min(end, session.messages.length)}楼）`);
+                    showNotice(`已显示 ${count} 条消息（${start}-${end}楼）`);
                 } else {
-                    if (startIdx < 0 || startIdx >= session.messages.length) {
-                        showNotice('删除范围无效');
-                        return;
-                    }
-                    const deleteCount = Math.min(endIdx - startIdx, session.messages.length - startIdx);
+                    const deleteCount = endIdx - startIdx;
                     session.messages.splice(startIdx, deleteCount);
                     showNotice(`已删除 ${deleteCount} 条消息`);
                 }
@@ -1764,12 +2166,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 elements.importFileInput.click();
                 return;
             default:
-                showNotice(`未知指令：${command}`);
+                showNotice(`未知指令：${command}。可用指令：/goto /hide /show /del /clear /rename /export /import`);
                 return;
         }
 
         saveSessions();
-        renderMessages();
+
+        let restoreFloor = anchorFloor;
+        if (command === '/del' && anchorFloor) {
+            restoreFloor = findNearestFloor(anchorFloor, session.messages.length);
+        }
+
+        if (command === '/clear') {
+            renderMessages(true);
+        } else {
+            renderMessages(false, restoreFloor, anchorOffset);
+        }
         updateTokenDisplay();
     }
 
@@ -1802,7 +2214,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const exportData = {
             title: session.title,
-            messages: session.messages,
+            messages: session.messages.map(m => {
+                const clean = { role: m.role, content: m.content };
+                if (m.hidden) clean.hidden = true;
+                if (m.images) clean.images = m.images;
+                return clean;
+            }),
             exportTime: new Date().toISOString()
         };
 
@@ -1867,7 +2284,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // API 通信 (模仿SillyTavern方式)
+    // API 通信
     // ========================================
     async function sendMessage() {
         const session = getCurrentSession();
@@ -1892,6 +2309,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // 验证并规范化URL
+        const normalizedUrl = normalizeApiUrl(config.url);
+        if (!normalizedUrl) {
+            showNotice('API URL 格式无效，请检查设置');
+            return;
+        }
+
+        // 如果URL被更新了，保存回配置
+        if (normalizedUrl !== config.url) {
+            config.url = normalizedUrl;
+            saveApiConfigs();
+            log('info', 'API URL已自动规范化', { url: normalizedUrl });
+        }
+
         const userMessage = {
             role: 'user',
             content: text,
@@ -1907,7 +2338,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         session.messages.push(userMessage);
         autoRenameSession(text);
-        renderMessages();
+        renderMessages(true);
         elements.messageInput.value = '';
         elements.messageInput.style.height = 'auto';
         handleInputResize();
@@ -1926,7 +2357,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 从配置中读取流式响应设置
+        const apiUrl = normalizeApiUrl(config.url);
+        if (!apiUrl) {
+            showNotice('API URL 无效');
+            return;
+        }
+
         const useStream = config.useStream !== false;
         const timeout = (config.timeout || 120) * 1000;
 
@@ -1934,6 +2370,7 @@ document.addEventListener('DOMContentLoaded', () => {
         abortController = new AbortController();
 
         log('info', '开始请求AI响应', {
+            url: apiUrl,
             model: config.model,
             stream: useStream,
             timeout: timeout / 1000 + 's',
@@ -1986,7 +2423,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // 构建请求体 (模仿SillyTavern格式)
             const requestBody = {
                 model: config.model,
                 messages: context,
@@ -1997,13 +2433,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 presence_penalty: parseFloat(elements.presencePenalty.value)
             };
 
-            // 添加max_tokens（如果设置了）
             const maxTokens = parseInt(elements.maxTokens.value);
             if (maxTokens > 0) {
                 requestBody.max_tokens = maxTokens;
             }
 
-            // 模仿SillyTavern的请求头
             const headers = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${config.key}`,
@@ -2012,15 +2446,13 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             log('info', '发送请求', {
-                url: config.url,
+                url: apiUrl,
                 model: config.model,
                 stream: useStream,
-                headers: Object.keys(headers)
+                contextLength: context.length
             });
 
-            log('info', '请求体', requestBody);
-
-            const response = await fetch(config.url, {
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify(requestBody),
@@ -2042,7 +2474,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: errorText.substring(0, 1000)
                 });
 
-                // 尝试解析错误信息
                 let errorMessage = `API 错误 ${response.status}`;
                 try {
                     const errorJson = JSON.parse(errorText);
@@ -2064,13 +2495,17 @@ document.addEventListener('DOMContentLoaded', () => {
             session.messages.push(assistantMsg);
             const msgIndex = session.messages.length - 1;
 
-            renderMessages();
+            renderMessages(true);
 
             if (useStream) {
                 await handleStreamResponse(response, session, msgIndex);
             } else {
                 await handleNonStreamResponse(response, session, msgIndex);
             }
+
+            // 流式结束后清除缓存，确保最终渲染是最新的
+            delete session.messages[msgIndex]._renderedHtml;
+            delete session.messages[msgIndex]._renderedSource;
 
             lastResponseTokens = estimateTokens(session.messages[msgIndex].content);
             localStorage.setItem('lastResponseTokens', lastResponseTokens.toString());
@@ -2087,7 +2522,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 log('warning', '请求被中止（超时或用户取消）');
                 showNotice('请求超时或已取消');
             } else {
-                log('error', '请求失败', { error: err.message, stack: err.stack });
+                log('error', '请求失败', { error: err.message });
                 showNotice(`请求失败: ${err.message}`);
             }
         } finally {
@@ -2121,7 +2556,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!trimmedLine) continue;
 
                     if (!trimmedLine.startsWith('data: ')) {
-                        // 某些API可能不使用标准SSE格式
                         if (trimmedLine.startsWith('{')) {
                             try {
                                 const json = JSON.parse(trimmedLine);
@@ -2133,7 +2567,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     updateLastMessage(session.messages[msgIndex]);
                                 }
                             } catch (e) {
-                                log('warning', '非标准格式解析失败', { line: trimmedLine.substring(0, 100) });
+                                // 忽略
                             }
                         }
                         continue;
@@ -2162,7 +2596,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } catch (e) {
-            log('error', '流式读取错误', { error: e.message });
+            if (e.name !== 'AbortError') {
+                log('error', '流式读取错误', { error: e.message });
+            }
             throw e;
         }
 
@@ -2209,145 +2645,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // 渲染
+    // Markdown 渲染（带缓存）
     // ========================================
-    function renderMessages() {
-        const session = getCurrentSession();
-
-        elements.chatWindow.innerHTML = '';
-
-        if (!session || session.messages.length === 0) {
-            elements.chatWindow.appendChild(createWelcomeScreen());
-            return;
+    function getCachedRenderedContent(msg) {
+        // 使用 _renderedHtml / _renderedSource 作为缓存键名
+        if (msg._renderedHtml && msg._renderedSource === msg.content) {
+            return msg._renderedHtml;
         }
 
-        session.messages.forEach((msg, index) => {
-            const floor = index + 1;
-            const msgDiv = createMessageElement(msg, floor);
-            elements.chatWindow.appendChild(msgDiv);
-        });
-
-        processCodeBlocks();
-        elements.chatWindow.scrollTop = elements.chatWindow.scrollHeight;
-    }
-
-    function createWelcomeScreen() {
-        const welcome = document.createElement('div');
-        welcome.className = 'welcome-screen';
-        welcome.innerHTML = `
-            <div class="welcome-icon">💬</div>
-            <h2>开始新对话</h2>
-            <p>输入消息开始聊天，或使用以下快捷操作</p>
-            <div class="welcome-tips">
-                <div class="tip-item">📝 双击标题可重命名</div>
-                <div class="tip-item">✏️ 点击消息右上角铅笔可快速操作</div>
-                <div class="tip-item">🖼️ 点击图片按钮可发送图片</div>
-                <div class="tip-item">🔍 Ctrl+F 搜索所有对话</div>
-                <div class="tip-item">🔧 点击调试按钮查看日志</div>
-            </div>
-        `;
-        return welcome;
-    }
-
-    function createMessageElement(msg, floor) {
-        const msgDiv = document.createElement('div');
-        msgDiv.className = `message ${msg.role}${msg.hidden ? ' hidden-msg' : ''}`;
-        msgDiv.dataset.floor = floor;
-
-        if (isSelectMode) {
-            msgDiv.classList.add('selectable');
-            if (selectedFloors.has(floor)) {
-                msgDiv.classList.add('selected');
-            }
-        }
-
-        if (!isSelectMode) {
-            const editBtn = document.createElement('button');
-            editBtn.className = 'msg-edit-btn';
-            editBtn.textContent = '✏️';
-            editBtn.title = '操作菜单';
-            editBtn.onclick = (e) => {
-                e.stopPropagation();
-                const rect = editBtn.getBoundingClientRect();
-                showContextMenu(rect.left, rect.bottom + 5, floor, msg.role);
-            };
-            msgDiv.appendChild(editBtn);
-        }
-
-        const metaDiv = document.createElement('div');
-        metaDiv.className = 'message-meta';
-
-        const floorSpan = document.createElement('span');
-        floorSpan.className = 'floor-num';
-        floorSpan.textContent = `${floor}楼`;
-
-        const tokenSpan = document.createElement('span');
-        tokenSpan.className = 'token-count';
-        let tokenCount = estimateTokens(msg.content);
-        if (msg.images && msg.images.length > 0) {
-            tokenCount += msg.images.length * 85;
-        }
-        tokenSpan.textContent = `${tokenCount} t`;
-
-        metaDiv.appendChild(floorSpan);
-        metaDiv.appendChild(tokenSpan);
-
-        if (msg.hidden) {
-            const hiddenIndicator = document.createElement('span');
-            hiddenIndicator.className = 'hidden-indicator';
-            hiddenIndicator.title = '此消息已隐藏（不计入上下文）';
-
-            const eye = document.createElement('span');
-            eye.className = 'hidden-eye';
-            eye.textContent = '👁‍🗨';
-
-            const label = document.createElement('span');
-            label.textContent = '隐藏';
-
-            hiddenIndicator.appendChild(eye);
-            hiddenIndicator.appendChild(label);
-            metaDiv.appendChild(hiddenIndicator);
-        }
-
-        if (msg.images && msg.images.length > 0) {
-            const imagesDiv = document.createElement('div');
-            imagesDiv.className = 'message-images';
-
-            msg.images.forEach(img => {
-                const imgEl = document.createElement('img');
-                imgEl.className = 'message-image';
-                imgEl.src = img.data;
-                imgEl.alt = '图片';
-                imgEl.onclick = (e) => {
-                    e.stopPropagation();
-                    openImageViewer(img.data);
-                };
-                imagesDiv.appendChild(imgEl);
-            });
-
-            msgDiv.appendChild(imagesDiv);
-        }
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'content';
-
-        if (msg.content) {
-            contentDiv.innerHTML = renderMarkdown(msg.content);
-        } else if (!msg.images || msg.images.length === 0) {
-            contentDiv.innerHTML = '<span style="color:#666">正在输入...</span>';
-        }
-
-        msgDiv.appendChild(metaDiv);
-        msgDiv.appendChild(contentDiv);
-
-        if (isSelectMode) {
-            msgDiv.addEventListener('click', (e) => {
-                e.preventDefault();
-                toggleFloorSelection(floor);
-            });
-        }
-
-        return msgDiv;
+        const html = renderMarkdown(msg.content);
+        msg._renderedHtml = html;
+        msg._renderedSource = msg.content;
+        return html;
     }
 
     function renderMarkdown(text) {
@@ -2370,6 +2679,202 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/`([^`]+)`/g, '<code>$1</code>');
     }
 
+    // ========================================
+    // 渲染系统
+    // ========================================
+    function renderMessages(scrollToBottom = true, anchorFloor = null, anchorOffset = 0) {
+        const session = getCurrentSession();
+
+        renderBatchId++;
+        const currentBatchId = renderBatchId;
+
+        elements.chatWindow.innerHTML = '';
+
+        if (!session || session.messages.length === 0) {
+            elements.chatWindow.appendChild(createWelcomeScreen());
+            return;
+        }
+
+        const messages = session.messages;
+        const totalMessages = messages.length;
+        const BATCH_SIZE = 30;
+
+        if (totalMessages <= BATCH_SIZE) {
+            const fragment = document.createDocumentFragment();
+            messages.forEach((msg, index) => {
+                fragment.appendChild(createMessageElement(msg, index + 1));
+            });
+            elements.chatWindow.appendChild(fragment);
+            processCodeBlocks();
+
+            if (scrollToBottom) {
+                elements.chatWindow.scrollTop = elements.chatWindow.scrollHeight;
+            } else if (anchorFloor !== null) {
+                requestAnimationFrame(() => {
+                    scrollToFloorWithOffset(anchorFloor, anchorOffset);
+                });
+            }
+            return;
+        }
+
+        // 大量消息：分片渲染
+        let index = 0;
+
+        function renderBatch() {
+            if (currentBatchId !== renderBatchId) return;
+
+            const fragment = document.createDocumentFragment();
+            const end = Math.min(index + BATCH_SIZE, totalMessages);
+
+            for (let i = index; i < end; i++) {
+                fragment.appendChild(createMessageElement(messages[i], i + 1));
+            }
+
+            elements.chatWindow.appendChild(fragment);
+            index = end;
+
+            if (index < totalMessages) {
+                requestAnimationFrame(renderBatch);
+            } else {
+                // 最后一批完成后处理代码块和滚动
+                processCodeBlocks();
+
+                if (scrollToBottom) {
+                    elements.chatWindow.scrollTop = elements.chatWindow.scrollHeight;
+                } else if (anchorFloor !== null) {
+                    requestAnimationFrame(() => {
+                        scrollToFloorWithOffset(anchorFloor, anchorOffset);
+                    });
+                }
+            }
+        }
+
+        renderBatch();
+    }
+
+    function createWelcomeScreen() {
+        const welcome = document.createElement('div');
+        welcome.className = 'welcome-screen';
+        welcome.innerHTML = `
+            <div class="welcome-icon">💬</div>
+            <h2>开始新对话</h2>
+            <p>输入消息开始聊天，或使用以下快捷操作</p>
+            <div class="welcome-tips">
+                <div class="tip-item">📝 双击标题可重命名</div>
+                <div class="tip-item">✏️ 点击消息右上角铅笔可快速操作</div>
+                <div class="tip-item">🖼️ 点击图片按钮可发送图片</div>
+                <div class="tip-item">🔍 Ctrl+F 搜索所有对话</div>
+                <div class="tip-item">📌 /goto 楼层号 跳转到指定楼层</div>
+                <div class="tip-item">🔧 点击调试按钮查看日志</div>
+                <div class="tip-item">🔒 所有数据仅存储在本地浏览器</div>
+            </div>
+        `;
+        return welcome;
+    }
+
+    function createMessageElement(msg, floor) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${msg.role}`;
+        msgDiv.dataset.floor = floor;
+
+        if (msg.hidden) {
+            msgDiv.classList.add('hidden-msg');
+        }
+
+        if (isSelectMode) {
+            msgDiv.classList.add('selectable');
+            if (selectedFloors.has(floor)) {
+                msgDiv.classList.add('selected');
+            }
+        }
+
+        // 消息头部：楼层 + token + 隐藏标记
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'message-meta';
+
+        const floorSpan = document.createElement('span');
+        floorSpan.className = 'floor-num';
+        floorSpan.textContent = `${floor}楼`;
+
+        const tokenSpan = document.createElement('span');
+        tokenSpan.className = 'token-count';
+        let tokenCount = estimateTokens(msg.content);
+        if (msg.images && msg.images.length > 0) {
+            tokenCount += msg.images.length * 85;
+        }
+        tokenSpan.textContent = `${tokenCount} t`;
+
+        metaDiv.appendChild(floorSpan);
+        metaDiv.appendChild(tokenSpan);
+
+        if (msg.hidden) {
+            const hiddenTag = document.createElement('span');
+            hiddenTag.className = 'hidden-tag';
+            hiddenTag.textContent = '已隐藏';
+            hiddenTag.title = '此消息已隐藏（不计入上下文）';
+            metaDiv.appendChild(hiddenTag);
+        }
+
+        msgDiv.appendChild(metaDiv);
+
+        // 编辑按钮（非选择模式）
+        if (!isSelectMode) {
+            const editBtn = document.createElement('button');
+            editBtn.className = 'msg-edit-btn';
+            editBtn.textContent = '✏️';
+            editBtn.title = '操作菜单';
+            editBtn.onclick = (e) => {
+                e.stopPropagation();
+                const rect = editBtn.getBoundingClientRect();
+                showContextMenu(rect.left, rect.bottom + 5, floor, msg.role);
+            };
+            msgDiv.appendChild(editBtn);
+        }
+
+        // 图片
+        if (msg.images && msg.images.length > 0) {
+            const imagesDiv = document.createElement('div');
+            imagesDiv.className = 'message-images';
+
+            msg.images.forEach(img => {
+                const imgEl = document.createElement('img');
+                imgEl.className = 'message-image';
+                imgEl.src = img.data;
+                imgEl.alt = '图片';
+                imgEl.loading = 'lazy';
+                imgEl.onclick = (e) => {
+                    e.stopPropagation();
+                    openImageViewer(img.data);
+                };
+                imagesDiv.appendChild(imgEl);
+            });
+
+            msgDiv.appendChild(imagesDiv);
+        }
+
+        // 内容
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content';
+
+        if (msg.content) {
+            contentDiv.innerHTML = getCachedRenderedContent(msg);
+        } else if (!msg.images || msg.images.length === 0) {
+            contentDiv.innerHTML = '<span class="typing-indicator">正在思考...</span>';
+        }
+
+        msgDiv.appendChild(contentDiv);
+
+        // 选择模式点击
+        if (isSelectMode) {
+            msgDiv.addEventListener('click', (e) => {
+                e.preventDefault();
+                toggleFloorSelection(floor);
+            });
+        }
+
+        return msgDiv;
+    }
+
     function updateLastMessage(msg) {
         const messages = elements.chatWindow.querySelectorAll('.message');
         const lastMsgDiv = messages[messages.length - 1];
@@ -2378,6 +2883,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const contentDiv = lastMsgDiv.querySelector('.content');
             const tokenSpan = lastMsgDiv.querySelector('.token-count');
 
+            // 流式更新时直接渲染，不用缓存
             contentDiv.innerHTML = renderMarkdown(msg.content);
             tokenSpan.textContent = `${estimateTokens(msg.content)} t`;
 
@@ -2390,7 +2896,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.chatWindow.querySelectorAll('pre code').forEach(codeBlock => {
             const pre = codeBlock.parentElement;
 
-            if (pre.parentElement.classList.contains('code-block-wrapper')) return;
+            if (pre.parentElement && pre.parentElement.classList.contains('code-block-wrapper')) return;
 
             const classes = codeBlock.className.split(' ');
             let lang = '';
@@ -2430,6 +2936,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 navigator.clipboard.writeText(codeBlock.textContent).then(() => {
                     copyBtn.textContent = '已复制';
                     setTimeout(() => copyBtn.textContent = '复制', 2000);
+                }).catch(() => {
+                    showNotice('复制失败');
                 });
             };
 

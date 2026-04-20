@@ -180,6 +180,21 @@ body {
     padding: 15px;
     border-top: 1px solid var(--border);
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* ========== 隐私徽章 ========== */
+.privacy-badge {
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--success);
+    padding: 6px 10px;
+    background: rgba(76, 175, 80, 0.1);
+    border: 1px solid rgba(76, 175, 80, 0.2);
+    border-radius: 6px;
+    cursor: help;
 }
 
 /* ========== 会话列表侧边栏 ========== */
@@ -240,6 +255,7 @@ body {
     cursor: pointer;
     transition: all 0.2s;
     position: relative;
+    gap: 8px;
 }
 
 .session-item:hover {
@@ -263,6 +279,16 @@ body {
     font-size: 0.9rem;
 }
 
+.session-item .session-meta {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    flex-shrink: 0;
+}
+
+.session-item.active .session-meta {
+    color: rgba(255,255,255,0.7);
+}
+
 .session-item .session-delete {
     opacity: 0;
     background: none;
@@ -273,6 +299,7 @@ body {
     padding: 4px 8px;
     transition: opacity 0.2s;
     border-radius: 4px;
+    flex-shrink: 0;
 }
 
 .session-item:hover .session-delete {
@@ -334,6 +361,71 @@ body {
 
 .close-config-btn:hover {
     color: var(--text-main);
+}
+
+/* ========== 隐私与安全框 ========== */
+.privacy-box {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 15px;
+    font-size: 0.8rem;
+    line-height: 1.6;
+}
+
+.privacy-box p {
+    margin: 0 0 8px 0;
+    color: var(--text-main);
+}
+
+.privacy-box p:last-of-type {
+    margin-bottom: 12px;
+}
+
+.privacy-box strong {
+    color: var(--success);
+}
+
+.danger-btn {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+    margin-top: 4px;
+}
+
+.danger-btn:hover {
+    background: var(--danger);
+    color: white;
+}
+
+/* ========== 测试连接按钮 ========== */
+.test-api-btn {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    border: 1px solid var(--success);
+    color: var(--success);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+    margin-top: 4px;
+}
+
+.test-api-btn:hover {
+    background: var(--success);
+    color: white;
+}
+
+.test-api-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* ========== 调试日志面板 ========== */
@@ -984,6 +1076,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    will-change: scroll-position;
 }
 
 /* ========== 欢迎页 ========== */
@@ -1034,11 +1127,13 @@ body {
     position: relative;
     max-width: 85%;
     padding: 12px 16px;
+    padding-top: 24px;
     border-radius: 12px;
     line-height: 1.7;
     word-wrap: break-word;
     transition: all 0.2s ease;
     cursor: default;
+    contain: layout style;
 }
 
 .message.user {
@@ -1056,12 +1151,12 @@ body {
 }
 
 .message.hidden-msg {
-    opacity: 0.82;
-    border: 1px dashed var(--border);
+    opacity: 0.7;
+    border-style: dashed !important;
 }
 
 .message.hidden-msg .content {
-    filter: none;
+    opacity: 0.85;
 }
 
 .message.highlight {
@@ -1074,7 +1169,7 @@ body {
 }
 
 .message.selectable {
-    cursor : pointer;
+    cursor: pointer;
 }
 
 .message.selectable:hover {
@@ -1105,7 +1200,7 @@ body {
 
 .msg-edit-btn {
     position: absolute;
-    top: -8px;
+    top: 2px;
     right: 8px;
     width: 26px;
     height: 26px;
@@ -1131,18 +1226,16 @@ body {
     border-color: var(--accent);
 }
 
+/* 消息元数据 - 放在消息内部顶部 */
 .message-meta {
-    position: absolute;
-    top: -18px;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     font-size: 0.65rem;
-    color: #666;
+    color: #888;
+    margin-bottom: 6px;
+    margin-top: -8px;
 }
-
-.user .message-meta { right: 5px; }
-.assistant .message-meta { left: 5px; }
 
 .floor-num {
     background: rgba(255,255,255,0.1);
@@ -1151,26 +1244,27 @@ body {
 }
 
 .token-count {
-    color: #888;
+    color: #777;
     font-family: 'Consolas', monospace;
 }
 
-.hidden-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 6px;
-    margin-left: 4px;
-    font-size: 0.75rem;
+/* 隐藏标记 - 简洁的文字标签 */
+.hidden-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    font-size: 0.65rem;
     color: var(--warning);
-    background: rgba(243, 156, 18, 0.12);
-    border: 1px solid rgba(243, 156, 18, 0.25);
+    background: rgba(243, 156, 18, 0.15);
+    border: 1px solid rgba(243, 156, 18, 0.3);
     border-radius: 10px;
-    line-height: 1;
+    line-height: 1.4;
+    font-weight: 500;
 }
 
-.hidden-indicator .hidden-eye {
-    font-size: 0.9rem;
+/* 正在思考指示器 */
+.typing-indicator {
+    color: #666;
+    font-style: italic;
 }
 
 .message .content {
@@ -1335,6 +1429,24 @@ body {
 
 .message.user .content a {
     color: #8fd4ff;
+}
+
+.message.user .message-meta {
+    color: rgba(255,255,255,0.5);
+}
+
+.message.user .floor-num {
+    background: rgba(255,255,255,0.15);
+}
+
+.message.user .token-count {
+    color: rgba(255,255,255,0.4);
+}
+
+.message.user .hidden-tag {
+    background: rgba(243, 156, 18, 0.25);
+    border-color: rgba(243, 156, 18, 0.4);
+    color: #ffd280;
 }
 
 .message-images {
@@ -1568,7 +1680,6 @@ body {
     display: none;
 }
 
-/* 输入框左侧按钮组 */
 .input-side-buttons {
     display: flex;
     gap: 6px;
@@ -1632,7 +1743,6 @@ body {
     border-color: var(--accent);
 }
 
-/* 输入框展开时的样式 */
 .input-area.expanded #message-input {
     flex-grow: 1;
 }
@@ -1710,7 +1820,7 @@ body {
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 24px;
-    max-width: 320px;
+    max-width: 360px;
     width: 90%;
     text-align: center;
 }
@@ -2136,6 +2246,7 @@ body {
     .message {
         max-width: 90%;
         padding: 10px 14px;
+        padding-top: 22px;
     }
 
     .msg-edit-btn {
@@ -2190,5 +2301,58 @@ body {
 
     .notice-container {
         top: 55px;
+    }
+
+    .modal-box {
+        max-width: 90%;
+    }
+}
+
+/* ========== 超小屏幕适配 ========== */
+@media (max-width: 380px) {
+    .input-side-buttons {
+        flex-direction: column;
+    }
+
+    .side-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 0.9rem;
+    }
+
+    #send-button,
+    .stop-btn {
+        padding: 10px 12px;
+        font-size: 0.8rem;
+    }
+
+    .selection-actions {
+        gap: 4px;
+    }
+
+    .sel-btn {
+        padding: 6px 10px;
+        font-size: 0.75rem;
+    }
+}
+
+/* ========== 大屏幕适配 ========== */
+@media (min-width: 1200px) {
+    .message {
+        max-width: 70%;
+    }
+
+    .chat-window {
+        padding: 30px 40px;
+    }
+}
+
+@media (min-width: 1600px) {
+    .message {
+        max-width: 60%;
+    }
+
+    .chat-window {
+        padding: 30px 60px;
     }
 }
