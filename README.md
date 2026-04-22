@@ -206,17 +206,6 @@ GitHub Pages 会在文件更新后自动重新部署（约 1~2 分钟生效）�
 
 ---
 
-## 📂 项目结构
-
-PageAI/
-├── index.html          # 主页面
-├── style.css           # 样式表
-├── script.js           # 核心逻辑
-├── manifest.json       # PWA 配置文件
-└── README.md           # 项目说明
-
----
-
 ## 🔒 隐私声明
 
 本项目承诺：
