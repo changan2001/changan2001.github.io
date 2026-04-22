@@ -220,7 +220,7 @@ GitHub Pages 会在文件更新后自动重新部署（约 1~2 分钟生效）�
 
 ## 📄 许可证
 
-本项目基于 [Prosperity Public License 3.0](https://prosperitylicense.com/versions/3.0.0) 开源。
+本项目基于 [CC BY-NC-SA 4.0 协议](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh) 开源。
 
 - 个人、非盈利组织可免费非商用使用、修改和分发本项目；
 - **任何商业用途，需联系作者获取授权**，如需获取商业授权，请联系：zw2076006103@163.com
