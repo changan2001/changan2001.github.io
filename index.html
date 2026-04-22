@@ -3,21 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: blob:; connect-src *; font-src 'self' https://cdn.jsdelivr.net;">
-    <title>AI 助手</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: blob: https://cdn.jsdelivr.net; connect-src *; font-src 'self' https://cdn.jsdelivr.net;">
+    <title>长安的 AI 助手</title>
 
     <!-- PWA 配置 -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a1a">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/512x512/1f4ac.png">
     <link rel="icon" type="image/png" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/32x32/1f4ac.png">
 
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"
-        integrity="sha384-UjGEBSMaHBMBbGQFMXqFRUhR5mSsFfOEjJDqdCnY9FB7bccYsHfnGMBhA6pLMeZ"
-        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
     <script>
         if (typeof marked === 'undefined') {
             var s = document.createElement('script');
@@ -25,9 +23,7 @@
             document.head.appendChild(s);
         }
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"
-        integrity="sha384-rSAVjtQ7O0s4aNnBq7xbv/Im9cY+ypJnNs1JFEBYfH1PcaqGNHyUaWGHh2jkhWc"
-        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <script>
         if (typeof DOMPurify === 'undefined') {
             var s2 = document.createElement('script');
@@ -35,21 +31,8 @@
             document.head.appendChild(s2);
         }
     </script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css"
-        integrity="sha384-rqJAaCBMFjfBMVNaFnxEzMVRMmhL3e+PC8k9J3oeAkF/e5UN+5FI24fFnGMRnv5"
-        crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"
-        integrity="sha384-mFmAEMIRMBDRiiqqO8VKYszpNsHBBdGUbxBLBHcOcSJe6Y0VCBBnYMk3AnZBk+N"
-        crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/css.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/xml.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/java.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/typescript.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
 </head>
 <body>
     <!-- 顶部通知容器 -->
@@ -109,6 +92,14 @@
                 <div class="config-group">
                     <label>API Key</label>
                     <input type="password" id="api-key" placeholder="sk-..." autocomplete="off">
+                </div>
+                <div class="config-group">
+                    <label>认证方式</label>
+                    <select id="auth-type" class="preset-select">
+                        <option value="bearer">Bearer Token（OpenAI 等）</option>
+                        <option value="x-api-key">x-api-key（Claude 原生）</option>
+                    </select>
+                    <span class="config-hint">OpenAI/中转站选 Bearer Token，Anthropic 原生 API 选 x-api-key</span>
                 </div>
                 <div class="config-group">
                     <label>模型名称</label>
@@ -209,7 +200,6 @@
                     <p>✅ 所有数据（API密钥、聊天记录、配置）<strong>仅存储在您的浏览器本地</strong>（localStorage）</p>
                     <p>✅ 不包含任何数据分析、追踪或统计代码</p>
                     <p>✅ API请求仅发送至您自行配置的端点地址</p>
-                    <p>✅ CDN资源使用 SRI 完整性校验</p>
                     <p>⚠️ 请确保您的API端点使用 HTTPS 协议</p>
                     <button class="danger-btn" id="clear-all-data-btn">🗑️ 清除所有本地数据</button>
                 </div>
@@ -322,7 +312,7 @@
             <textarea id="edit-content" rows="6" placeholder="编辑消息内容..."></textarea>
             <div class="edit-options">
                 <label class="edit-option">
-                    <input type="checkbox" id="edit-resend" checked>
+                    <input type="checkbox" id="edit-resend">
                     <span>编辑后重新发送（删除此消息之后的所有内容）</span>
                 </label>
             </div>

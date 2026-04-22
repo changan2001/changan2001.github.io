@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modelSelect: $('model-select'),
         modelSelectGroup: $('model-select-group'),
         modelCount: $('model-count'),
+        authType: $('auth-type'),
         useStream: $('use-stream'),
         requestTimeout: $('request-timeout'),
         presetSelect: $('preset-select'),
@@ -242,9 +243,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 breaks: true,
                 gfm: true,
                 highlight: function(code, lang) {
-                    if (window.hljs && lang && hljs.getLanguage(lang)) {
+                    if (window.hljs && lang) {
                         try {
-                            return hljs.highlight(code, { language: lang }).value;
+                            return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
                         } catch (e) {
                             log('warning', '代码高亮失败', { lang, error: e.message });
                         }
@@ -290,6 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 url: '',
                 key: '',
                 model: 'gpt-4o',
+                authType: 'bearer',
                 useStream: true,
                 timeout: 120
             };
@@ -321,7 +323,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveSessions() {
-        // 保存前清除渲染缓存，避免缓存数据污染 localStorage
         const cleanedSessions = sessions.map(session => ({
             ...session,
             messages: session.messages.map(msg => {
@@ -363,16 +364,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let url = rawUrl.trim();
 
-        // 去除末尾斜杠
         url = url.replace(/\/+$/, '');
 
-        // 如果没有协议头，自动添加 https://
         if (!/^https?:\/\//i.test(url)) {
             url = 'https://' + url;
             log('info', 'URL自动补全协议头', { original: rawUrl, normalized: url });
         }
 
-        // 验证URL格式
         try {
             new URL(url);
         } catch (e) {
@@ -380,9 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return '';
         }
 
-        // 如果URL不包含 /chat/completions，且看起来像是 base URL，自动补全
         if (!url.includes('/chat/completions')) {
-            // 检查是否只到了 /v1 或 /v1/ 这种级别
             if (/\/v\d+\/?$/i.test(url)) {
                 url = url + '/chat/completions';
                 log('info', 'URL自动补全路径', { original: rawUrl, normalized: url });
@@ -422,6 +418,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
+    // 认证头构建
+    // ========================================
+    function buildAuthHeaders(apiKey, authType) {
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+
+        if (authType === 'x-api-key') {
+            headers['x-api-key'] = apiKey;
+        } else {
+            headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+
+        return headers;
+    }
+
+    // ========================================
     // API 配置管理
     // ========================================
     function renderApiConfigSelect() {
@@ -444,6 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.apiUrl.value = config.url;
             elements.apiKey.value = config.key;
             elements.apiModel.value = config.model;
+            elements.authType.value = config.authType || 'bearer';
             elements.useStream.checked = config.useStream !== false;
             elements.requestTimeout.value = config.timeout || 120;
         }
@@ -456,7 +470,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawUrl = elements.apiUrl.value.trim();
             const normalizedUrl = normalizeApiUrl(rawUrl);
 
-            // 验证URL
             const validation = validateApiUrl(normalizedUrl);
             if (!validation.valid) {
                 showNotice(`URL错误: ${validation.message}`);
@@ -468,7 +481,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 log('warning', validation.warning, { url: normalizedUrl });
             }
 
-            // 如果URL被规范化了，更新输入框
             if (normalizedUrl !== rawUrl) {
                 elements.apiUrl.value = normalizedUrl;
             }
@@ -477,6 +489,7 @@ document.addEventListener('DOMContentLoaded', () => {
             config.url = normalizedUrl;
             config.key = elements.apiKey.value.trim();
             config.model = elements.apiModel.value.trim();
+            config.authType = elements.authType.value;
             config.useStream = elements.useStream.checked;
             config.timeout = parseInt(elements.requestTimeout.value) || 120;
             saveApiConfigs();
@@ -486,6 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 name: config.name,
                 url: config.url,
                 model: config.model,
+                authType: config.authType,
                 useStream: config.useStream
             });
         }
@@ -507,6 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
             url: '',
             key: '',
             model: 'gpt-4o',
+            authType: 'bearer',
             useStream: true,
             timeout: 120
         };
@@ -545,6 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const rawUrl = elements.apiUrl.value.trim();
         const apiKey = elements.apiKey.value.trim();
         const model = elements.apiModel.value.trim();
+        const authType = elements.authType.value;
 
         if (!rawUrl) {
             showNotice('请先填写 API URL');
@@ -563,7 +579,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 更新输入框中的URL
         if (normalizedUrl !== rawUrl) {
             elements.apiUrl.value = normalizedUrl;
         }
@@ -571,7 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.testApiBtn.disabled = true;
         elements.testApiBtn.textContent = '🔗 测试中...';
 
-        log('info', '开始测试API连接', { url: normalizedUrl, model: model || 'gpt-4o' });
+        log('info', '开始测试API连接', { url: normalizedUrl, model: model || 'gpt-4o', authType: authType });
 
         try {
             const controller = new AbortController();
@@ -584,14 +599,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 stream: false
             };
 
+            const headers = buildAuthHeaders(apiKey, authType);
+            headers['Accept'] = 'application/json';
+
             const response = await fetch(normalizedUrl, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Accept': 'application/json',
-                    'x-api-key': apiKey
-                },
+                headers: headers,
                 body: JSON.stringify(requestBody),
                 signal: controller.signal
             });
@@ -679,6 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchAvailableModels() {
         let apiUrl = elements.apiUrl.value.trim();
         const apiKey = elements.apiKey.value.trim();
+        const authType = elements.authType.value;
 
         if (!apiUrl) {
             showNotice('请先填写 API URL');
@@ -690,14 +704,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 先规范化URL
         apiUrl = normalizeApiUrl(apiUrl);
         if (apiUrl !== elements.apiUrl.value.trim()) {
             elements.apiUrl.value = apiUrl;
         }
 
         const modelsUrl = getModelsEndpoint(apiUrl);
-        log('info', '开始获取模型列表', { chatUrl: apiUrl, modelsUrl: modelsUrl });
+        log('info', '开始获取模型列表', { chatUrl: apiUrl, modelsUrl: modelsUrl, authType: authType });
 
         elements.fetchModelsBtn.disabled = true;
         elements.fetchModelsBtn.classList.add('loading');
@@ -706,12 +719,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-            const headers = {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'x-api-key': apiKey
-            };
+            const headers = buildAuthHeaders(apiKey, authType);
+            headers['Accept'] = 'application/json';
 
             const response = await fetch(modelsUrl, {
                 method: 'GET',
@@ -972,9 +981,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         editingFloor = floor;
         elements.editContent.value = msg.content;
-        elements.editResend.checked = (msg.role === 'user');
+        elements.editResend.checked = false;
 
-        // 如果是AI消息，隐藏"重新发送"选项
         const editOptionEl = elements.editResend.closest('.edit-option');
         if (editOptionEl) {
             editOptionEl.style.display = msg.role === 'user' ? '' : 'none';
@@ -1018,7 +1026,6 @@ document.addEventListener('DOMContentLoaded', () => {
             await sendMessage();
         } else {
             msg.content = newContent;
-            // 清除缓存
             delete msg._renderedHtml;
             delete msg._renderedSource;
             saveSessions();
@@ -1469,7 +1476,6 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.imagePreviewBar.classList.remove('active');
         updateSelectionUI();
 
-        // 记录位置后重新渲染
         const anchorFloor = getFirstVisibleFloor();
         const anchorOffset = anchorFloor ? getFloorOffset(anchorFloor) : 0;
         renderMessages(false, anchorFloor, anchorOffset);
@@ -1478,7 +1484,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function exitSelectMode() {
         if (!isSelectMode) return;
 
-        // 记录位置
         const anchorFloor = getFirstVisibleFloor();
         const anchorOffset = anchorFloor ? getFloorOffset(anchorFloor) : 0;
 
@@ -1586,7 +1591,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         saveSessions();
 
-        // 退出选择模式
         isSelectMode = false;
         selectedFloors.clear();
         elements.selectModeBtn.classList.remove('active');
@@ -1702,7 +1706,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'hide':
                 msg.hidden = true;
-                // 清除缓存以触发重新渲染
                 delete msg._renderedHtml;
                 delete msg._renderedSource;
                 saveSessions();
@@ -1982,7 +1985,6 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.clearAllDataBtn.addEventListener('click', clearAllLocalData);
         }
 
-        // URL 输入框失焦时自动规范化
         elements.apiUrl.addEventListener('blur', () => {
             const rawUrl = elements.apiUrl.value.trim();
             if (rawUrl) {
@@ -2090,7 +2092,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 scrollToFloor(targetFloor);
-                return; // 不需要重新渲染
+                return;
             }
             case '/hide':
             case '/del':
@@ -2108,7 +2110,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 end = isNaN(end) ? start : end;
                 if (start > end) [start, end] = [end, start];
 
-                // 边界检查
                 start = Math.max(1, start);
                 end = Math.min(end, session.messages.length);
 
@@ -2309,14 +2310,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 验证并规范化URL
         const normalizedUrl = normalizeApiUrl(config.url);
         if (!normalizedUrl) {
             showNotice('API URL 格式无效，请检查设置');
             return;
         }
 
-        // 如果URL被更新了，保存回配置
         if (normalizedUrl !== config.url) {
             config.url = normalizedUrl;
             saveApiConfigs();
@@ -2365,6 +2364,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const useStream = config.useStream !== false;
         const timeout = (config.timeout || 120) * 1000;
+        const authType = config.authType || 'bearer';
 
         setLoading(true);
         abortController = new AbortController();
@@ -2373,6 +2373,7 @@ document.addEventListener('DOMContentLoaded', () => {
             url: apiUrl,
             model: config.model,
             stream: useStream,
+            authType: authType,
             timeout: timeout / 1000 + 's',
             messagesCount: session.messages.filter(m => !m.hidden).length
         });
@@ -2438,12 +2439,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 requestBody.max_tokens = maxTokens;
             }
 
-            const headers = {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${config.key}`,
-                'Accept': useStream ? 'text/event-stream' : 'application/json',
-                'x-api-key': config.key
-            };
+            const headers = buildAuthHeaders(config.key, authType);
+            headers['Accept'] = useStream ? 'text/event-stream' : 'application/json';
 
             log('info', '发送请求', {
                 url: apiUrl,
@@ -2503,7 +2500,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 await handleNonStreamResponse(response, session, msgIndex);
             }
 
-            // 流式结束后清除缓存，确保最终渲染是最新的
             delete session.messages[msgIndex]._renderedHtml;
             delete session.messages[msgIndex]._renderedSource;
 
@@ -2648,7 +2644,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Markdown 渲染（带缓存）
     // ========================================
     function getCachedRenderedContent(msg) {
-        // 使用 _renderedHtml / _renderedSource 作为缓存键名
         if (msg._renderedHtml && msg._renderedSource === msg.content) {
             return msg._renderedHtml;
         }
@@ -2717,7 +2712,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 大量消息：分片渲染
         let index = 0;
 
         function renderBatch() {
@@ -2736,7 +2730,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (index < totalMessages) {
                 requestAnimationFrame(renderBatch);
             } else {
-                // 最后一批完成后处理代码块和滚动
                 processCodeBlocks();
 
                 if (scrollToBottom) {
@@ -2788,7 +2781,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 消息头部：楼层 + token + 隐藏标记
         const metaDiv = document.createElement('div');
         metaDiv.className = 'message-meta';
 
@@ -2817,7 +2809,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         msgDiv.appendChild(metaDiv);
 
-        // 编辑按钮（非选择模式）
         if (!isSelectMode) {
             const editBtn = document.createElement('button');
             editBtn.className = 'msg-edit-btn';
@@ -2831,7 +2822,6 @@ document.addEventListener('DOMContentLoaded', () => {
             msgDiv.appendChild(editBtn);
         }
 
-        // 图片
         if (msg.images && msg.images.length > 0) {
             const imagesDiv = document.createElement('div');
             imagesDiv.className = 'message-images';
@@ -2852,7 +2842,6 @@ document.addEventListener('DOMContentLoaded', () => {
             msgDiv.appendChild(imagesDiv);
         }
 
-        // 内容
         const contentDiv = document.createElement('div');
         contentDiv.className = 'content';
 
@@ -2864,7 +2853,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         msgDiv.appendChild(contentDiv);
 
-        // 选择模式点击
         if (isSelectMode) {
             msgDiv.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -2883,7 +2871,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const contentDiv = lastMsgDiv.querySelector('.content');
             const tokenSpan = lastMsgDiv.querySelector('.token-count');
 
-            // 流式更新时直接渲染，不用缓存
             contentDiv.innerHTML = renderMarkdown(msg.content);
             tokenSpan.textContent = `${estimateTokens(msg.content)} t`;
 
@@ -2954,8 +2941,12 @@ document.addEventListener('DOMContentLoaded', () => {
             wrapper.appendChild(header);
             wrapper.appendChild(pre);
 
-            if (window.hljs && lang && hljs.getLanguage(lang)) {
-                hljs.highlightElement(codeBlock);
+            if (window.hljs && lang) {
+                try {
+                    hljs.highlightElement(codeBlock);
+                } catch (e) {
+                    // 忽略不支持的语言
+                }
             }
         });
     }
